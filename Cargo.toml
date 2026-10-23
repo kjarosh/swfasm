@@ -13,3 +13,11 @@ clap = { version = "4.6.1", features = ["derive"] }
 ron = "0.12.2"
 serde = { version = "1.0.228", features = ["derive"] }
 swf = { git = "https://github.com/ruffle-rs/ruffle", rev = "49f93212b281f784de317aea9abd430e18345e21" }
+
+[dev-dependencies]
+libtest-mimic = "0.8.2"
+walkdir = "2.5.0"
+
+[[test]]
+name = "examples"
+harness = false
