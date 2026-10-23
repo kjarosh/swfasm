@@ -1,0 +1,15 @@
+// The FileAttributes tag, which describes the SWF to the player.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(            // all flags default to false
+            action_script_3: true, // uses AVM2 (ActionScript 3) instead of AVM1
+            use_network: true,     // when run locally, gets network access instead of local file access
+            has_metadata: true,    // contains a Metadata tag
+            use_gpu: true,         // requests GPU compositing
+            use_direct_blit: true, // requests hardware acceleration
+        ),
+        ShowFrame,
+        End,
+    ],
+)
