@@ -1,0 +1,15 @@
+[package]
+name = "swfasm"
+description = "A textual representation of SWF files, with a compiler that turns it into SWF files"
+authors = ["Kamil Jarosz <kjarosh256@gmail.com>"]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/kjarosh/swfasm"
+version = "0.0.0"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.6.1", features = ["derive"] }
+ron = "0.12.2"
+serde = { version = "1.0.228", features = ["derive"] }
+swf = { git = "https://github.com/ruffle-rs/ruffle", rev = "49f93212b281f784de317aea9abd430e18345e21" }
