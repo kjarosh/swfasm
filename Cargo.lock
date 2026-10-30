@@ -504,6 +504,7 @@ dependencies = [
  "clap",
  "libtest-mimic",
  "ron",
+ "same-file",
  "serde",
  "swf",
  "walkdir",
