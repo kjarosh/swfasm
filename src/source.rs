@@ -7,6 +7,7 @@
 
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer};
+use std::borrow::Cow;
 use std::fmt;
 use swf::TagCode;
 
@@ -231,9 +232,18 @@ impl<'de> Deserialize<'de> for Bytes {
             }
 
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Bytes, A::Error> {
+                /// A string borrowed from the input when possible. Strings with
+                /// escapes can't be, so they are owned.
+                ///
+                /// `Cow<str>` alone is always owned: it borrows only with
+                /// `#[serde(borrow)]`.
+                #[derive(Deserialize)]
+                #[serde(transparent)]
+                struct Hex<'a>(#[serde(borrow)] Cow<'a, str>);
+
                 let mut bytes = Vec::new();
-                while let Some(hex) = seq.next_element::<&str>()? {
-                    bytes.extend(Bytes::parse_hex(hex).map_err(de::Error::custom)?);
+                while let Some(Hex(hex)) = seq.next_element()? {
+                    bytes.extend(Bytes::parse_hex(&hex).map_err(de::Error::custom)?);
                 }
                 Ok(Bytes(bytes))
             }
@@ -276,6 +286,10 @@ mod tests {
         assert_eq!(
             parse_bytes("[\n    \"01\", // one\n    \"02\", /* two */\n]"),
             Ok(vec![0x01, 0x02])
+        );
+        assert_eq!(
+            parse_bytes(r#"["01\t02", "\u{66}f"]"#),
+            Ok(vec![0x01, 0x02, 0xff])
         );
     }
 
