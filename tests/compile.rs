@@ -433,3 +433,62 @@ fn remove_object_errors() {
             .contains("Unexpected field named `character` in `RemoveObject2`")
     );
 }
+
+#[test]
+fn define_binary_data() {
+    // The body is the character ID, a reserved 32-bit field and the data.
+    assert_eq!(
+        compile_tags!(r#"DefineBinaryData(id: 0x1234, data: InlineBytes("01 02 ff"))"#),
+        [
+            0xC9, 0x15, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0xFF
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"DefineBinaryData(id: 1, data: InlineBytes(["01", "", "02"]))"#),
+        [0xC8, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02]
+    );
+    assert_eq!(
+        compile_tags!(r#"DefineBinaryData(id: 1, data: InlineBytes(""))"#),
+        [0xC6, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    // The longest data that fits in the short header form, and the shortest
+    // that does not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DefineBinaryData(id: 1, data: InlineBytes("{}"))"#,
+            "00".repeat(56)
+        )),
+        [[0xFE, 0x15, 0x01, 0x00].as_slice(), &[0; 60]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DefineBinaryData(id: 1, data: InlineBytes("{}"))"#,
+            "00".repeat(57)
+        )),
+        [
+            [0xFF, 0x15, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
+            &[0; 61]
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn define_binary_data_errors() {
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: "01")])"#)
+            .contains("Expected identifier")
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: Hex("01"))])"#)
+            .contains("Unexpected variant named `Hex` in enum `Data`")
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(data: InlineBytes(""))])"#)
+            .contains("Unexpected missing field named `id` in `DefineBinaryData`")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, tags: [DefineBinaryData(id: 1)])")
+            .contains("Unexpected missing field named `data` in `DefineBinaryData`")
+    );
+}

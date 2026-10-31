@@ -3,7 +3,10 @@
 use crate::source::{Data, Swf, Tag};
 use anyhow::{Context, Result, bail};
 use ron::extensions::Extensions;
-use swf::{Color, FileAttributes, Fixed8, Header, Rectangle, RemoveObject, TagCode, Twips};
+use swf::{
+    Color, DefineBinaryData, FileAttributes, Fixed8, Header, Rectangle, RemoveObject, TagCode,
+    Twips,
+};
 
 /// Parses the textual representation of a SWF file.
 ///
@@ -194,6 +197,13 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
             )?;
             return Ok(());
         }
+        Tag::DefineBinaryData {
+            id,
+            data: Data::InlineBytes(bytes),
+        } => swf::Tag::DefineBinaryData(DefineBinaryData {
+            id: *id,
+            data: &bytes.0,
+        }),
         Tag::Raw {
             code,
             data: Data::InlineBytes(data),

@@ -181,6 +181,15 @@ pub enum Tag {
         use_direct_blit: bool,
     },
 
+    /// Defines a character holding arbitrary binary data (code 87).
+    DefineBinaryData {
+        /// The character ID.
+        id: u16,
+
+        /// The data.
+        data: Data,
+    },
+
     /// A tag with an arbitrary code and body.
     ///
     /// The body is written as is, with the short (2 byte) header form when it
