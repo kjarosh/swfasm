@@ -501,13 +501,21 @@ name = "swfasm"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "clap",
  "libtest-mimic",
  "ron",
- "same-file",
  "serde",
  "swf",
  "walkdir",
+]
+
+[[package]]
+name = "swfasm-cli"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "same-file",
+ "swfasm",
 ]
 
 [[package]]

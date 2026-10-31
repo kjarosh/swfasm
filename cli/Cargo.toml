@@ -1,0 +1,18 @@
+[package]
+name = "swfasm-cli"
+description = "A compiler that turns a textual representation into SWF files"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "swfasm"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.6.1", features = ["derive"] }
+same-file = "1.0.6"
+swfasm = { path = "..", version = "0.0.0" }

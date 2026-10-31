@@ -8,6 +8,13 @@ swfasm test.swfasm         # writes test.swf
 swfasm test.swfasm -o out.swf
 ```
 
+The command line tool is in the `swfasm-cli` crate (in [`cli/`](cli)), and the
+compiler is in the `swfasm` library crate.
+
+```sh
+cargo install swfasm-cli
+```
+
 ## Format
 
 Sources use the `.swfasm` extension and are written in
