@@ -3,7 +3,7 @@
 use crate::source::{DoActionContent, Swf, Tag};
 use anyhow::{Context, Result, bail};
 use ron::extensions::Extensions;
-use swf::{Color, FileAttributes, Fixed8, Header, Rectangle, TagCode, Twips};
+use swf::{Color, FileAttributes, Fixed8, Header, Rectangle, RemoveObject, TagCode, Twips};
 
 /// Parses the textual representation of a SWF file.
 ///
@@ -161,7 +161,15 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
             }
             swf::Tag::SetBackgroundColor(Color::from_rgb(*rgb, 255))
         }
+        Tag::RemoveObject { character, depth } => swf::Tag::RemoveObject(RemoveObject {
+            depth: *depth,
+            character_id: Some(*character),
+        }),
         Tag::DoAction(DoActionContent::Bytes(bytes)) => swf::Tag::DoAction(&bytes.0),
+        Tag::RemoveObject2 { depth } => swf::Tag::RemoveObject(RemoveObject {
+            depth: *depth,
+            character_id: None,
+        }),
         Tag::DefineSprite {
             id,
             num_frames: explicit_num_frames,

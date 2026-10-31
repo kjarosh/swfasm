@@ -107,6 +107,17 @@ pub enum Tag {
     /// Displays the current frame and starts the next one (code 1).
     ShowFrame,
 
+    /// Removes a character from the display list (code 5).
+    ///
+    /// Superseded by `RemoveObject2`, which needs only the depth.
+    RemoveObject {
+        /// The ID of the character to remove.
+        character: u16,
+
+        /// The depth of the character to remove.
+        depth: u16,
+    },
+
     /// Sets the background color of the stage (code 9).
     ///
     /// The color is in the `0xRRGGBB` format, so it must be at most
@@ -115,6 +126,12 @@ pub enum Tag {
 
     /// AVM1 actions run when the current frame is displayed (code 12).
     DoAction(DoActionContent),
+
+    /// Removes the character at a depth from the display list (code 28).
+    RemoveObject2 {
+        /// The depth of the character to remove.
+        depth: u16,
+    },
 
     /// Defines a sprite (movie clip) with its own timeline (code 39).
     DefineSprite {
