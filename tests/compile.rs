@@ -382,3 +382,33 @@ fn define_sprite_errors() {
             .contains("Unexpected field named `frames` in `DefineSprite`")
     );
 }
+
+#[test]
+fn remove_object() {
+    // The body is the character ID and the depth.
+    assert_eq!(
+        compile_tags!("RemoveObject(character: 0x1234, depth: 0x5678)"),
+        [0x44, 0x01, 0x34, 0x12, 0x78, 0x56]
+    );
+    // The body is just the depth.
+    assert_eq!(
+        compile_tags!("RemoveObject2(depth: 0x1234)"),
+        [0x02, 0x07, 0x34, 0x12]
+    );
+}
+
+#[test]
+fn remove_object_errors() {
+    assert!(
+        compile_err!("Swf(version: 10, tags: [RemoveObject(depth: 1)])")
+            .contains("Unexpected missing field named `character` in `RemoveObject`")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, tags: [RemoveObject2()])")
+            .contains("Unexpected missing field named `depth` in `RemoveObject2`")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, tags: [RemoveObject2(character: 1, depth: 1)])")
+            .contains("Unexpected field named `character` in `RemoveObject2`")
+    );
+}
