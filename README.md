@@ -29,13 +29,13 @@ Tags are named after SWF tags, see `Tag` in [`src/source.rs`](src/source.rs)
 for the ones that are supported. In addition, there are special tags that give
 control over the raw encoding:
 
-* `Raw(code: 26, data: "01 02 ff")` emits a tag with an arbitrary code and a
-  body given as [binary data](#binary-data). Set `force_long: true` to use the
-  long (6 byte) header form even for a short body.
+* `Raw(code: 26, data: InlineBytes("01 02 ff"))` emits a tag with an arbitrary
+  code and a body given as [binary data](#binary-data). Set `force_long: true`
+  to use the long (6 byte) header form even for a short body.
 
 ### AVM1 actions
 
-`DoAction(Bytes("96 02 00 05 01 26"))` takes AVM1 bytecode as
+`DoAction(InlineBytes("96 02 00 05 01 26"))` takes AVM1 bytecode as
 [binary data](#binary-data).
 
 ### Binary data
@@ -45,10 +45,10 @@ Raw binary data is written as a hex string with optional whitespace
 allows commenting individual parts:
 
 ```ron
-Raw(code: 1, data: [
+Raw(code: 1, data: InlineBytes([
     "0a 00", // frame count
     "ff ff", // flags
-]),
+])),
 ```
 
 ## TODO

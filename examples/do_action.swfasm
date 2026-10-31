@@ -3,7 +3,7 @@ Swf(
     version: 10,
     tags: [
         FileAttributes(),
-        DoAction(Bytes([
+        DoAction(InlineBytes([
             "96 07 00 00 68 65 6c 6c 6f 00", // Push "hello"
             "26",                            // Trace
             "00",                            // End

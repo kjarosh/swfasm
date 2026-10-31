@@ -125,7 +125,9 @@ pub enum Tag {
     SetBackgroundColor(u32),
 
     /// AVM1 actions run when the current frame is displayed (code 12).
-    DoAction(DoActionContent),
+    ///
+    /// The data is AVM1 bytecode.
+    DoAction(Data),
 
     /// Removes the character at a depth from the display list (code 28).
     RemoveObject2 {
@@ -191,7 +193,7 @@ pub enum Tag {
         code: u16,
 
         /// The tag body, without the header.
-        data: Bytes,
+        data: Data,
 
         /// Whether to use the long (6 byte) header form even when the body is
         /// short enough for the short one.
@@ -211,11 +213,11 @@ impl Tag {
     }
 }
 
-/// The contents of a `DoAction` tag.
-#[derive(Debug, Deserialize)]
-pub enum DoActionContent {
-    /// AVM1 bytecode as inline bytes.
-    Bytes(Bytes),
+/// Binary data.
+#[derive(Debug, PartialEq, Deserialize)]
+pub enum Data {
+    /// Inline bytes.
+    InlineBytes(Bytes),
 }
 
 /// Binary data, written as a hex string with optional whitespace (`"01 02 ff"`),
@@ -224,10 +226,10 @@ pub enum DoActionContent {
 /// The list form allows commenting individual parts of the data:
 ///
 /// ```ron
-/// data: [
+/// data: InlineBytes([
 ///     "0a 00", // frame count
 ///     "ff ff", // flags
-/// ],
+/// ]),
 /// ```
 #[derive(Debug, Default, PartialEq)]
 pub struct Bytes(pub Vec<u8>);

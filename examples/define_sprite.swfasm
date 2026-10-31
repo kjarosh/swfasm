@@ -7,7 +7,7 @@ Swf(
             id: 1,
             num_frames: 2,          // default: the number of ShowFrame tags in the sprite
             tags: [                 // the sprite's timeline
-                DoAction(Bytes([
+                DoAction(InlineBytes([
                     "96 07 00 00 68 65 6c 6c 6f 00", // Push "hello"
                     "26",                            // Trace
                     "00",                            // End
@@ -19,11 +19,11 @@ Swf(
         ),
 
         // PlaceObject2, which places the sprite on the stage.
-        Raw(code: 26, data: [
+        Raw(code: 26, data: InlineBytes([
             "02",    // flags: has character
             "01 00", // depth
             "01 00", // character ID
-        ]),
+        ])),
 
         ShowFrame,
         End,

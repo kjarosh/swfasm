@@ -74,10 +74,16 @@ fn default_num_frames() {
     assert_eq!(num_frames(""), 0);
     assert_eq!(num_frames("ShowFrame, ShowFrame"), 2);
     assert_eq!(num_frames("FileAttributes(), ShowFrame, End"), 1);
-    assert_eq!(num_frames(r#"Raw(code: 1, data: "")"#), 1);
-    assert_eq!(num_frames(r#"Raw(code: 1, force_long: true, data: "")"#), 1);
-    assert_eq!(num_frames(r#"Raw(code: 2, data: "")"#), 0);
-    assert_eq!(num_frames(r#"ShowFrame, Raw(code: 1, data: "")"#), 2);
+    assert_eq!(num_frames(r#"Raw(code: 1, data: InlineBytes(""))"#), 1);
+    assert_eq!(
+        num_frames(r#"Raw(code: 1, force_long: true, data: InlineBytes(""))"#),
+        1
+    );
+    assert_eq!(num_frames(r#"Raw(code: 2, data: InlineBytes(""))"#), 0);
+    assert_eq!(
+        num_frames(r#"ShowFrame, Raw(code: 1, data: InlineBytes(""))"#),
+        2
+    );
     assert_eq!(num_frames(&"ShowFrame,".repeat(65535)), 65535);
     assert!(
         compile_err!(format!(
@@ -151,27 +157,35 @@ fn file_attributes_flags() {
 #[test]
 fn raw_tag() {
     assert_eq!(
-        compile_tags!(r#"Raw(code: 1023, data: "01 02 aB"), Raw(code: 2, data: "0304")"#),
+        compile_tags!(
+            r#"Raw(code: 1023, data: InlineBytes("01 02 aB")), Raw(code: 2, data: InlineBytes("0304"))"#
+        ),
         [0xC3, 0xFF, 0x01, 0x02, 0xAB, 0x82, 0x00, 0x03, 0x04]
     );
     assert_eq!(
         compile_tags!(
-            r#"Raw(code: 2, data: [
+            r#"Raw(code: 2, data: InlineBytes([
                 "05 06", // comment
                 "",
                 " 07 ",
-            ])"#
+            ]))"#
         ),
         [0x83, 0x00, 0x05, 0x06, 0x07]
     );
-    assert_eq!(compile_tags!(r#"Raw(code: 2, data: [])"#), [0x80, 0x00]);
     assert_eq!(
-        compile_tags!(r#"Raw(code: 2, force_long: true, data: "aa")"#),
+        compile_tags!(r#"Raw(code: 2, data: InlineBytes([]))"#),
+        [0x80, 0x00]
+    );
+    assert_eq!(
+        compile_tags!(r#"Raw(code: 2, force_long: true, data: InlineBytes("aa"))"#),
         [0xBF, 0x00, 0x01, 0x00, 0x00, 0x00, 0xAA]
     );
     // Bodies that do not fit in the short form use the long one anyway.
     assert_eq!(
-        compile_tags!(&format!(r#"Raw(code: 2, data: "{}")"#, "00".repeat(63))),
+        compile_tags!(&format!(
+            r#"Raw(code: 2, data: InlineBytes("{}"))"#,
+            "00".repeat(63)
+        )),
         [[0xBF, 0x00, 63, 0x00, 0x00, 0x00].as_slice(), &[0; 63]].concat()
     );
 }
@@ -179,7 +193,7 @@ fn raw_tag() {
 #[test]
 fn tag_code_errors() {
     assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1100, data: "")])"#)
+        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1100, data: InlineBytes(""))])"#)
             .contains("tag code 1100 does not fit in 10 bits")
     );
 }
@@ -191,43 +205,48 @@ fn unknown_fields() {
             .contains("Unexpected field named `as_3` in `FileAttributes`")
     );
     assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: "", long: true)])"#)
-            .contains("Unexpected field named `long` in `Raw`")
+        compile_err!(
+            r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes(""), long: true)])"#
+        )
+        .contains("Unexpected field named `long` in `Raw`")
     );
 }
 
 #[test]
 fn do_action_bytes() {
     assert_eq!(
-        compile_tags!(r#"DoAction(Bytes("07 00"))"#),
+        compile_tags!(r#"DoAction(InlineBytes("07 00"))"#),
         [0x02, 0x03, 0x07, 0x00]
     );
-    assert_eq!(compile_tags!(r#"DoAction(Bytes(""))"#), [0x00, 0x03]);
+    assert_eq!(compile_tags!(r#"DoAction(InlineBytes(""))"#), [0x00, 0x03]);
     // Bytes are written as is: no End action is appended, and the bytecode is
     // not validated.
     assert_eq!(
-        compile_tags!(r#"DoAction(Bytes("07"))"#),
+        compile_tags!(r#"DoAction(InlineBytes("07"))"#),
         [0x01, 0x03, 0x07]
     );
     assert_eq!(
-        compile_tags!(r#"DoAction(Bytes("ff ff"))"#),
+        compile_tags!(r#"DoAction(InlineBytes("ff ff"))"#),
         [0x02, 0x03, 0xFF, 0xFF]
     );
     assert_eq!(
-        compile_tags!(r#"DoAction(Bytes(["07", "", "00"]))"#),
+        compile_tags!(r#"DoAction(InlineBytes(["07", "", "00"]))"#),
         [0x02, 0x03, 0x07, 0x00]
     );
     // The longest body that fits in the short header form.
     assert_eq!(
-        compile_tags!(&format!(r#"DoAction(Bytes("{}"))"#, "00".repeat(62))),
+        compile_tags!(&format!(r#"DoAction(InlineBytes("{}"))"#, "00".repeat(62))),
         [[0x3E, 0x03].as_slice(), &[0; 62]].concat()
     );
     assert_eq!(
-        compile_tags!(&format!(r#"DoAction(Bytes("{}"))"#, "00".repeat(63))),
+        compile_tags!(&format!(r#"DoAction(InlineBytes("{}"))"#, "00".repeat(63))),
         [[0x3F, 0x03, 63, 0x00, 0x00, 0x00].as_slice(), &[0; 63]].concat()
     );
     assert_eq!(
-        compile_tags!(&format!(r#"DoAction(Bytes("{}"))"#, "00".repeat(0x1234))),
+        compile_tags!(&format!(
+            r#"DoAction(InlineBytes("{}"))"#,
+            "00".repeat(0x1234)
+        )),
         [
             [0x3F, 0x03, 0x34, 0x12, 0x00, 0x00].as_slice(),
             &[0; 0x1234]
@@ -244,10 +263,10 @@ fn do_action_errors() {
     );
     assert!(
         compile_err!(r#"Swf(version: 10, tags: [DoAction(Text("07 00"))])"#)
-            .contains("Unexpected variant named `Text` in enum `DoActionContent`")
+            .contains("Unexpected variant named `Text` in enum `Data`")
     );
     assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoAction(Bytes("070"))])"#)
+        compile_err!(r#"Swf(version: 10, tags: [DoAction(InlineBytes("070"))])"#)
             .contains(r#"hex string "070" has an odd number of digits"#)
     );
 }
@@ -267,19 +286,19 @@ fn invalid_values() {
             .contains("background color 0x1000000 is not in the 0xRRGGBB format")
     );
     assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: "0")])"#)
+        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes("0"))])"#)
             .contains(r#"hex string "0" has an odd number of digits"#)
     );
     assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: ["00", "0"])])"#)
+        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes(["00", "0"]))])"#)
             .contains(r#"hex string "0" has an odd number of digits"#)
     );
     assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: "0g")])"#)
+        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes("0g"))])"#)
             .contains("invalid hex digit 'g'")
     );
     assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: [1, 2])])"#)
+        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes([1, 2]))])"#)
             .contains("Expected string")
     );
 }
@@ -309,7 +328,9 @@ fn define_sprite() {
     );
     // Nested tags keep their header form.
     assert_eq!(
-        compile_tags!(r#"DefineSprite(id: 1, tags: [Raw(code: 1, force_long: true, data: "")])"#),
+        compile_tags!(
+            r#"DefineSprite(id: 1, tags: [Raw(code: 1, force_long: true, data: InlineBytes(""))])"#
+        ),
         [
             0xCA, 0x09, 0x01, 0x00, 0x01, 0x00, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00
         ]
