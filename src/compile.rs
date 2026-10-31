@@ -3,7 +3,7 @@
 use crate::source::{DoActionContent, Swf, Tag};
 use anyhow::{Context, Result, bail};
 use ron::extensions::Extensions;
-use swf::{Color, FileAttributes, Fixed8, Header, Rectangle, Twips};
+use swf::{Color, FileAttributes, Fixed8, Header, Rectangle, TagCode, Twips};
 
 /// Parses the textual representation of a SWF file.
 ///
@@ -70,17 +70,8 @@ pub fn compile_str(text: &str) -> Result<Vec<u8>> {
 /// ```
 pub fn compile(swf: &Swf) -> Result<Vec<u8>> {
     let mut tags = Vec::new();
-    for (i, tag) in swf.tags.iter().enumerate() {
-        write_tag(tag, swf.version, &mut tags).with_context(|| format!("tag #{i}"))?;
-    }
-
-    let num_frames = match swf.num_frames {
-        Some(num_frames) => num_frames,
-        None => {
-            let count = swf.tags.iter().filter(|tag| tag.is_show_frame()).count();
-            u16::try_from(count).context("too many frames")?
-        }
-    };
+    write_tags(&swf.tags, swf.version, &mut tags)?;
+    let num_frames = num_frames(swf.num_frames, &swf.tags)?;
 
     let x = twips(swf.stage.x).context("stage x")?;
     let y = twips(swf.stage.y).context("stage y")?;
@@ -127,6 +118,24 @@ fn fixed8(value: f64) -> Result<Fixed8> {
     Ok(fixed)
 }
 
+/// Returns the explicit frame count, or else the number of `ShowFrame` tags.
+fn num_frames(explicit: Option<u16>, tags: &[Tag]) -> Result<u16> {
+    match explicit {
+        Some(num_frames) => Ok(num_frames),
+        None => {
+            let count = tags.iter().filter(|tag| tag.is_show_frame()).count();
+            u16::try_from(count).context("too many frames")
+        }
+    }
+}
+
+fn write_tags(tags: &[Tag], swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
+    for (i, tag) in tags.iter().enumerate() {
+        write_tag(tag, swf_version, output).with_context(|| format!("tag #{i}"))?;
+    }
+    Ok(())
+}
+
 fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
     let swf_tag = match tag {
         Tag::ShowFrame => swf::Tag::ShowFrame,
@@ -153,6 +162,30 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
             swf::Tag::SetBackgroundColor(Color::from_rgb(*rgb, 255))
         }
         Tag::DoAction(DoActionContent::Bytes(bytes)) => swf::Tag::DoAction(&bytes.0),
+        Tag::DefineSprite {
+            id,
+            num_frames: explicit_num_frames,
+            tags,
+        } => {
+            // The nested tags are written by hand instead of with
+            // `swf::Tag::DefineSprite` (which appends an `End` tag), so that
+            // they are written as is, and can include raw tags with the long
+            // header form.
+            // TODO Maybe add support to the swf crate?
+            let mut body = Vec::new();
+            body.extend_from_slice(&id.to_le_bytes());
+            body.extend_from_slice(&num_frames(*explicit_num_frames, tags)?.to_le_bytes());
+            write_tags(tags, swf_version, &mut body)?;
+            swf::write::write_tag(
+                &swf::Tag::Unknown {
+                    tag_code: TagCode::DefineSprite as u16,
+                    data: &body,
+                },
+                swf_version,
+                output,
+            )?;
+            return Ok(());
+        }
         Tag::Raw {
             code,
             data,

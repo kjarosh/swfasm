@@ -283,3 +283,102 @@ fn invalid_values() {
             .contains("Expected string")
     );
 }
+
+#[test]
+fn define_sprite() {
+    // The body is the character ID, the frame count and the nested tags.
+    assert_eq!(
+        compile_tags!("DefineSprite(id: 0x1234, tags: [ShowFrame, End])"),
+        [0xC8, 0x09, 0x34, 0x12, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00]
+    );
+    // No End tag is appended.
+    assert_eq!(
+        compile_tags!("DefineSprite(id: 1, tags: [])"),
+        [0xC4, 0x09, 0x01, 0x00, 0x00, 0x00]
+    );
+    // Tags after an End tag are written too.
+    assert_eq!(
+        compile_tags!("DefineSprite(id: 1, num_frames: 0, tags: [End, ShowFrame, End])"),
+        [
+            0xCA, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00
+        ]
+    );
+    assert_eq!(
+        compile_tags!("DefineSprite(id: 1, num_frames: 0x0203, tags: [ShowFrame])"),
+        [0xC6, 0x09, 0x01, 0x00, 0x03, 0x02, 0x40, 0x00]
+    );
+    // Nested tags keep their header form.
+    assert_eq!(
+        compile_tags!(r#"DefineSprite(id: 1, tags: [Raw(code: 1, force_long: true, data: "")])"#),
+        [
+            0xCA, 0x09, 0x01, 0x00, 0x01, 0x00, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]
+    );
+    // The longest body that fits in the short header form, and the shortest
+    // one that does not.
+    assert_eq!(
+        compile_tags!(&format!(
+            "DefineSprite(id: 1, num_frames: 0, tags: [{}])",
+            "End,".repeat(29)
+        )),
+        [[0xFE, 0x09, 0x01, 0x00, 0x00, 0x00].as_slice(), &[0; 58]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            "DefineSprite(id: 1, num_frames: 0, tags: [{}])",
+            "End,".repeat(30)
+        )),
+        [
+            [0xFF, 0x09, 64, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00].as_slice(),
+            &[0; 60]
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn define_sprite_num_frames() {
+    let num_frames = |tags: &str| {
+        let swf = swfasm::compile_str(&format!("Swf(version: 10, tags: [{tags}])")).unwrap();
+        swf::decompress_swf(&swf[..]).unwrap().header.num_frames()
+    };
+    // Frames of sprites do not count towards the main timeline.
+    assert_eq!(num_frames("DefineSprite(id: 1, tags: [ShowFrame])"), 0);
+    assert_eq!(
+        num_frames("DefineSprite(id: 1, tags: [ShowFrame]), ShowFrame"),
+        1
+    );
+    assert!(
+        compile_err!(format!(
+            "Swf(version: 10, tags: [DefineSprite(id: 1, tags: [{}])])",
+            "ShowFrame,".repeat(65536)
+        ))
+        .contains("tag #0: too many frames")
+    );
+}
+
+#[test]
+fn define_sprite_errors() {
+    // Errors in nested tags point to both the sprite and the nested tag.
+    assert!(
+        compile_err!(
+            "Swf(version: 10, tags: [
+                ShowFrame,
+                DefineSprite(id: 1, tags: [ShowFrame, SetBackgroundColor(0x1000000)]),
+            ])"
+        )
+        .contains("tag #1: tag #1: background color 0x1000000 is not in the 0xRRGGBB format")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, tags: [DefineSprite(tags: [])])")
+            .contains("Unexpected missing field named `id` in `DefineSprite`")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, tags: [DefineSprite(id: 1)])")
+            .contains("Unexpected missing field named `tags` in `DefineSprite`")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, tags: [DefineSprite(id: 1, frames: 1)])")
+            .contains("Unexpected field named `frames` in `DefineSprite`")
+    );
+}
