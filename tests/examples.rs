@@ -31,7 +31,7 @@ fn run_test(source_path: &Path) -> Result<(), Failed> {
     let expected_path = source_path.with_extension("swf");
     let regenerate = || {
         format!(
-            "regenerate it with `cargo run -p swfasm -- {}`",
+            "regenerate it with `cargo run -p swfasm-cli -- {}`",
             relative_to_workspace(source_path).display()
         )
     };
