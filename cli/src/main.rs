@@ -3,6 +3,7 @@ mod cli;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::Opt;
+use swfasm::files::NoFiles;
 
 fn main() -> Result<()> {
     let opt = Opt::parse();
@@ -22,7 +23,8 @@ fn main() -> Result<()> {
 
     let text = std::fs::read_to_string(&opt.input)
         .with_context(|| format!("Failed to read {}", opt.input.display()))?;
-    let swf = swfasm::compile_str(&text)
+    // TODO Read files.
+    let swf = swfasm::compile_str(&text, &NoFiles)
         .with_context(|| format!("Failed to compile {}", opt.input.display()))?;
 
     std::fs::write(&output_path, swf)

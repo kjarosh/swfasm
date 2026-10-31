@@ -1,8 +1,10 @@
 //! Compiles the textual (RON) representation of a SWF file into a SWF file.
 
+use crate::files::FileProvider;
 use crate::source::{Data, Swf, Tag};
 use anyhow::{Context, Result, bail};
 use ron::extensions::Extensions;
+use std::borrow::Cow;
 use swf::{
     Color, DefineBinaryData, FileAttributes, Fixed8, Header, Rectangle, RemoveObject, TagCode,
     Twips,
@@ -40,8 +42,8 @@ pub fn parse(text: &str) -> Result<Swf> {
 ///
 /// This is [`parse`] followed by [`compile`], so it fails if either of them
 /// does.
-pub fn compile_str(text: &str) -> Result<Vec<u8>> {
-    compile(&parse(text)?)
+pub fn compile_str(text: &str, files: &dyn FileProvider) -> Result<Vec<u8>> {
+    compile(&parse(text)?, files)
 }
 
 /// Compiles a SWF file into SWF bytes.
@@ -49,17 +51,20 @@ pub fn compile_str(text: &str) -> Result<Vec<u8>> {
 /// Unless set explicitly, the frame count in the header is the number of
 /// `ShowFrame` tags.
 ///
+/// Files that the source refers to are read from `files`.
+///
 /// ```
+/// use swfasm::files::NoFiles;
 /// use swfasm::source::Tag;
 ///
 /// let mut swf = swfasm::parse("Swf(version: 10)")?;
 /// swf.tags.extend([Tag::ShowFrame, Tag::ShowFrame, Tag::End]);
 ///
-/// let bytes = swfasm::compile(&swf)?;
+/// let bytes = swfasm::compile(&swf, &NoFiles)?;
 /// assert_eq!(&bytes[..4], b"FWS\x0a"); // uncompressed, version 10
 ///
 /// swf.version = 11;
-/// let bytes = swfasm::compile(&swf)?;
+/// let bytes = swfasm::compile(&swf, &NoFiles)?;
 /// assert_eq!(&bytes[..4], b"FWS\x0b"); // uncompressed, version 11
 ///
 /// // Values that parse but can't be encoded result in errors.
@@ -67,13 +72,13 @@ pub fn compile_str(text: &str) -> Result<Vec<u8>> {
 ///     version: 10,
 ///     tags: [SetBackgroundColor(0x1000000)],
 /// )")?;
-/// let err = swfasm::compile(&swf).unwrap_err();
+/// let err = swfasm::compile(&swf, &NoFiles).unwrap_err();
 /// assert!(format!("{err:#}").contains("not in the 0xRRGGBB format"));
 /// # Ok::<(), anyhow::Error>(())
 /// ```
-pub fn compile(swf: &Swf) -> Result<Vec<u8>> {
+pub fn compile(swf: &Swf, files: &dyn FileProvider) -> Result<Vec<u8>> {
     let mut tags = Vec::new();
-    write_tags(&swf.tags, swf.version, &mut tags)?;
+    write_tags(&swf.tags, swf.version, files, &mut tags)?;
     let num_frames = num_frames(swf.num_frames, &swf.tags)?;
 
     let x = twips(swf.stage.x).context("stage x")?;
@@ -132,14 +137,27 @@ fn num_frames(explicit: Option<u16>, tags: &[Tag]) -> Result<u16> {
     }
 }
 
-fn write_tags(tags: &[Tag], swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
+fn write_tags(
+    tags: &[Tag],
+    swf_version: u8,
+    files: &dyn FileProvider,
+    output: &mut Vec<u8>,
+) -> Result<()> {
     for (i, tag) in tags.iter().enumerate() {
-        write_tag(tag, swf_version, output).with_context(|| format!("tag #{i}"))?;
+        write_tag(tag, swf_version, files, output).with_context(|| format!("tag #{i}"))?;
     }
     Ok(())
 }
 
-fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
+fn write_tag(
+    tag: &Tag,
+    swf_version: u8,
+    files: &dyn FileProvider,
+    output: &mut Vec<u8>,
+) -> Result<()> {
+    // The data of the tag, if it has any, declared here so that `swf_tag` can
+    // borrow it.
+    let data;
     let swf_tag = match tag {
         Tag::ShowFrame => swf::Tag::ShowFrame,
         Tag::End => swf::Tag::End,
@@ -168,7 +186,10 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
             depth: *depth,
             character_id: Some(*character),
         }),
-        Tag::DoAction(Data::InlineBytes(bytes)) => swf::Tag::DoAction(&bytes.0),
+        Tag::DoAction(action_data) => {
+            data = read_data(action_data, files)?;
+            swf::Tag::DoAction(&data)
+        }
         Tag::RemoveObject2 { depth } => swf::Tag::RemoveObject(RemoveObject {
             depth: *depth,
             character_id: None,
@@ -186,7 +207,7 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
             let mut body = Vec::new();
             body.extend_from_slice(&id.to_le_bytes());
             body.extend_from_slice(&num_frames(*explicit_num_frames, tags)?.to_le_bytes());
-            write_tags(tags, swf_version, &mut body)?;
+            write_tags(tags, swf_version, files, &mut body)?;
             swf::write::write_tag(
                 &swf::Tag::Unknown {
                     tag_code: TagCode::DefineSprite as u16,
@@ -199,40 +220,56 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
         }
         Tag::DefineBinaryData {
             id,
-            data: Data::InlineBytes(bytes),
-        } => swf::Tag::DefineBinaryData(DefineBinaryData {
-            id: *id,
-            data: &bytes.0,
-        }),
+            data: binary_data,
+        } => {
+            data = read_data(binary_data, files)?;
+            swf::Tag::DefineBinaryData(DefineBinaryData {
+                id: *id,
+                data: &data,
+            })
+        }
         Tag::Raw {
             code,
-            data: Data::InlineBytes(data),
+            data: body,
             force_long: false,
         } => {
             check_tag_code(*code)?;
+            data = read_data(body, files)?;
             swf::Tag::Unknown {
                 tag_code: *code,
-                data: &data.0,
+                data: &data,
             }
         }
         Tag::Raw {
             code,
-            data: Data::InlineBytes(data),
+            data: body,
             force_long: true,
         } => {
             check_tag_code(*code)?;
+            data = read_data(body, files)?;
 
             // TODO Maybe add support to the swf crate?
-            let length = u32::try_from(data.0.len()).context("tag body too long")?;
+            let length = u32::try_from(data.len()).context("tag body too long")?;
             output.extend_from_slice(&(code << 6 | 0b111111).to_le_bytes());
             output.extend_from_slice(&length.to_le_bytes());
-            output.extend_from_slice(&data.0);
+            output.extend_from_slice(&data);
             return Ok(());
         }
     };
 
     swf::write::write_tag(&swf_tag, swf_version, output)?;
     Ok(())
+}
+
+/// Returns the bytes of binary data, reading them from `files` if needed.
+fn read_data<'a>(data: &'a Data, files: &dyn FileProvider) -> Result<Cow<'a, [u8]>> {
+    match data {
+        Data::InlineBytes(bytes) => Ok(Cow::Borrowed(&bytes.0)),
+        Data::File(path) => files
+            .read(path)
+            .map(Cow::Owned)
+            .with_context(|| format!("failed to read file \"{path}\"")),
+    }
 }
 
 /// Fails if the tag code does not fit in the 10 bits of a tag header.

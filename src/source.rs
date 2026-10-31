@@ -227,6 +227,12 @@ impl Tag {
 pub enum Data {
     /// Inline bytes.
     InlineBytes(Bytes),
+
+    /// The contents of a file, written as `File("data.bin")`.
+    ///
+    /// How the path is interpreted is up to the
+    /// [`FileProvider`](crate::files::FileProvider) passed to the compiler.
+    File(String),
 }
 
 /// Binary data, written as a hex string with optional whitespace (`"01 02 ff"`),

@@ -1,12 +1,21 @@
 use swf::{Compression, Fixed8, Rectangle, Twips};
+use swfasm::files::{FileProvider, NoFiles};
 
 // These are macros instead of functions, so that failures point to the test.
 
 /// Compiles the given tags and returns the serialized tag stream.
+///
+/// Files are read from the given provider, or are not available without one.
 macro_rules! compile_tags {
-    ($tags:expr) => {{
+    ($tags:expr) => {
+        compile_tags!($tags, &NoFiles)
+    };
+    ($tags:expr, $files:expr) => {{
         let compile = |tags: &str| {
-            swfasm::compile_str(&format!("Swf(version: 10, num_frames: 0, tags: [{tags}])"))
+            swfasm::compile_str(
+                &format!("Swf(version: 10, num_frames: 0, tags: [{tags}])"),
+                $files,
+            )
         };
         let header_len = compile("").unwrap().len();
         compile(&$tags).unwrap()[header_len..].to_vec()
@@ -14,10 +23,34 @@ macro_rules! compile_tags {
 }
 
 /// Compiles the given source, which must fail, and returns the error message.
+///
+/// Files are read from the given provider, or are not available without one.
 macro_rules! compile_err {
     ($source:expr) => {
-        format!("{:#}", swfasm::compile_str(&$source).unwrap_err())
+        compile_err!($source, &NoFiles)
     };
+    ($source:expr, $files:expr) => {
+        format!("{:#}", swfasm::compile_str(&$source, $files).unwrap_err())
+    };
+}
+
+/// Provides files whose contents are their paths, so that tests can check which
+/// path is read.
+struct PathAsContents;
+
+impl FileProvider for PathAsContents {
+    fn read(&self, path: &str) -> anyhow::Result<Vec<u8>> {
+        Ok(path.as_bytes().to_vec())
+    }
+}
+
+/// Provides no files, with an error that names the path.
+struct Failing;
+
+impl FileProvider for Failing {
+    fn read(&self, path: &str) -> anyhow::Result<Vec<u8>> {
+        anyhow::bail!("no file named {path}")
+    }
 }
 
 #[test]
@@ -29,6 +62,7 @@ fn header() {
             frame_rate: 12.5,
             tags: [ShowFrame, ShowFrame, ShowFrame],
         )",
+        &NoFiles,
     )
     .unwrap();
     let swf_buf = swf::decompress_swf(&swf[..]).unwrap();
@@ -50,9 +84,11 @@ fn header() {
 
 #[test]
 fn stage_edges_are_added_in_twips() {
-    let swf =
-        swfasm::compile_str("Swf(version: 10, stage: (x: 0.05, y: 0.05, width: 0.1, height: 0.1))")
-            .unwrap();
+    let swf = swfasm::compile_str(
+        "Swf(version: 10, stage: (x: 0.05, y: 0.05, width: 0.1, height: 0.1))",
+        &NoFiles,
+    )
+    .unwrap();
     let swf_buf = swf::decompress_swf(&swf[..]).unwrap();
     assert_eq!(
         swf_buf.header.stage_size(),
@@ -68,7 +104,8 @@ fn stage_edges_are_added_in_twips() {
 #[test]
 fn default_num_frames() {
     let num_frames = |tags: &str| {
-        let swf = swfasm::compile_str(&format!("Swf(version: 10, tags: [{tags}])")).unwrap();
+        let swf =
+            swfasm::compile_str(&format!("Swf(version: 10, tags: [{tags}])"), &NoFiles).unwrap();
         swf::decompress_swf(&swf[..]).unwrap().header.num_frames()
     };
     assert_eq!(num_frames(""), 0);
@@ -97,9 +134,10 @@ fn default_num_frames() {
 #[test]
 fn explicit_num_frames() {
     let num_frames = |num_frames: u16, tags: &str| {
-        let swf = swfasm::compile_str(&format!(
-            "Swf(version: 10, num_frames: {num_frames}, tags: [{tags}])"
-        ))
+        let swf = swfasm::compile_str(
+            &format!("Swf(version: 10, num_frames: {num_frames}, tags: [{tags}])"),
+            &NoFiles,
+        )
         .unwrap();
         swf::decompress_swf(&swf[..]).unwrap().header.num_frames()
     };
@@ -191,6 +229,25 @@ fn raw_tag() {
 }
 
 #[test]
+fn raw_tag_from_file() {
+    assert_eq!(
+        compile_tags!(r#"Raw(code: 2, data: File("ab"))"#, &PathAsContents),
+        [0x82, 0x00, b'a', b'b']
+    );
+    assert_eq!(
+        compile_tags!(
+            r#"Raw(code: 2, force_long: true, data: File("a"))"#,
+            &PathAsContents
+        ),
+        [0xBF, 0x00, 0x01, 0x00, 0x00, 0x00, b'a']
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 2, data: File("a.bin"))])"#)
+            .contains(r#"tag #0: failed to read file "a.bin": files are not available"#)
+    );
+}
+
+#[test]
 fn tag_code_errors() {
     assert!(
         compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1100, data: InlineBytes(""))])"#)
@@ -268,6 +325,18 @@ fn do_action_errors() {
     assert!(
         compile_err!(r#"Swf(version: 10, tags: [DoAction(InlineBytes("070"))])"#)
             .contains(r#"hex string "070" has an odd number of digits"#)
+    );
+}
+
+#[test]
+fn do_action_from_file() {
+    assert_eq!(
+        compile_tags!(r#"DoAction(File("ab"))"#, &PathAsContents),
+        [0x02, 0x03, b'a', b'b']
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DoAction(File("a.bin"))])"#)
+            .contains(r#"tag #0: failed to read file "a.bin": files are not available"#)
     );
 }
 
@@ -360,7 +429,8 @@ fn define_sprite() {
 #[test]
 fn define_sprite_num_frames() {
     let num_frames = |tags: &str| {
-        let swf = swfasm::compile_str(&format!("Swf(version: 10, tags: [{tags}])")).unwrap();
+        let swf =
+            swfasm::compile_str(&format!("Swf(version: 10, tags: [{tags}])"), &NoFiles).unwrap();
         swf::decompress_swf(&swf[..]).unwrap().header.num_frames()
     };
     // Frames of sprites do not count towards the main timeline.
@@ -474,7 +544,67 @@ fn define_binary_data() {
 }
 
 #[test]
+fn define_binary_data_from_file() {
+    assert_eq!(
+        compile_tags!(
+            r#"DefineBinaryData(id: 1, data: File("ab"))"#,
+            &PathAsContents
+        ),
+        [0xC8, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, b'a', b'b']
+    );
+    // The path is passed to the provider exactly as it is written, with
+    // escapes resolved.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineBinaryData(id: 1, data: File("./a/../\u{62}"))"#,
+            &PathAsContents
+        ),
+        [
+            [0xCE, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00].as_slice(),
+            b"./a/../b"
+        ]
+        .concat()
+    );
+    assert_eq!(
+        compile_tags!(
+            r#"DefineBinaryData(id: 1, data: File(""))"#,
+            &PathAsContents
+        ),
+        [0xC6, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    // Files are read in nested tags too.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineSprite(id: 1, num_frames: 0, tags: [
+                DefineBinaryData(id: 2, data: File("c")),
+            ])"#,
+            &PathAsContents
+        ),
+        [
+            0xCD, 0x09, 0x01, 0x00, 0x00, 0x00, 0xC7, 0x15, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
+            b'c'
+        ]
+    );
+}
+
+#[test]
 fn define_binary_data_errors() {
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [ShowFrame, DefineBinaryData(id: 1, data: File("a.bin"))])"#
+        )
+        .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    );
+    // Errors of the provider are kept, and point to the nested tag.
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [
+                DefineSprite(id: 1, tags: [DefineBinaryData(id: 2, data: File("a.bin"))]),
+            ])"#,
+            &Failing
+        )
+        .contains(r#"tag #0: tag #0: failed to read file "a.bin": no file named a.bin"#)
+    );
     assert!(
         compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: "01")])"#)
             .contains("Expected identifier")
@@ -482,6 +612,10 @@ fn define_binary_data_errors() {
     assert!(
         compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: Hex("01"))])"#)
             .contains("Unexpected variant named `Hex` in enum `Data`")
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: File(1))])"#)
+            .contains("Expected string")
     );
     assert!(
         compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(data: InlineBytes(""))])"#)

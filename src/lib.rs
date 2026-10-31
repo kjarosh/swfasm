@@ -2,6 +2,7 @@
 //! into SWF files.
 
 mod compile;
+pub mod files;
 pub mod source;
 
 pub use compile::{compile, compile_str, parse};
