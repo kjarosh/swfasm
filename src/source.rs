@@ -116,6 +116,26 @@ pub enum Tag {
     /// AVM1 actions run when the current frame is displayed (code 12).
     DoAction(DoActionContent),
 
+    /// Defines a sprite (movie clip) with its own timeline (code 39).
+    DefineSprite {
+        /// The character ID.
+        id: u16,
+
+        /// The frame count of the sprite.
+        ///
+        /// Defaults to the number of tags with the `ShowFrame` code on the
+        /// sprite's timeline.
+        #[serde(default)]
+        num_frames: Option<u16>,
+
+        /// The tags of the sprite's timeline, in order.
+        ///
+        /// Like on the main timeline, the list is written as is: an `End` tag
+        /// is not appended automatically. Tags that are not allowed in sprites
+        /// are not rejected.
+        tags: Vec<Tag>,
+    },
+
     /// Describes the SWF to the player (code 69).
     ///
     /// All flags default to false.
