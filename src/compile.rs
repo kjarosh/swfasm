@@ -1,6 +1,6 @@
 //! Compiles the textual (RON) representation of a SWF file into a SWF file.
 
-use crate::source::{DoActionContent, Swf, Tag};
+use crate::source::{Data, Swf, Tag};
 use anyhow::{Context, Result, bail};
 use ron::extensions::Extensions;
 use swf::{Color, FileAttributes, Fixed8, Header, Rectangle, RemoveObject, TagCode, Twips};
@@ -165,7 +165,7 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
             depth: *depth,
             character_id: Some(*character),
         }),
-        Tag::DoAction(DoActionContent::Bytes(bytes)) => swf::Tag::DoAction(&bytes.0),
+        Tag::DoAction(Data::InlineBytes(bytes)) => swf::Tag::DoAction(&bytes.0),
         Tag::RemoveObject2 { depth } => swf::Tag::RemoveObject(RemoveObject {
             depth: *depth,
             character_id: None,
@@ -196,7 +196,7 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
         }
         Tag::Raw {
             code,
-            data,
+            data: Data::InlineBytes(data),
             force_long: false,
         } => {
             check_tag_code(*code)?;
@@ -207,7 +207,7 @@ fn write_tag(tag: &Tag, swf_version: u8, output: &mut Vec<u8>) -> Result<()> {
         }
         Tag::Raw {
             code,
-            data,
+            data: Data::InlineBytes(data),
             force_long: true,
         } => {
             check_tag_code(*code)?;
