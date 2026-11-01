@@ -1,5 +1,6 @@
 use swf::{Compression, Fixed8, Rectangle, Twips};
 use swfasm::files::{FileProvider, NoFiles};
+use swfasm::source::{Data, Rascal, RascalSource, Tag};
 
 // These are macros instead of functions, so that failures point to the test.
 
@@ -625,4 +626,232 @@ fn define_binary_data_errors() {
         compile_err!("Swf(version: 10, tags: [DefineBinaryData(id: 1)])")
             .contains("Unexpected missing field named `data` in `DefineBinaryData`")
     );
+}
+
+#[test]
+fn rascal_syntax() {
+    let parse = |data: &str| -> Result<Data, String> {
+        let swf = swfasm::parse(&format!("Swf(version: 10, tags: [DoAction({data})])"))
+            .map_err(|e| format!("{e:#}"))?;
+        match swf.tags.into_iter().next() {
+            Some(Tag::DoAction(data)) => Ok(data),
+            tag => panic!("unexpected tag {tag:?}"),
+        }
+    };
+    let rascal = |source| Ok(Data::Rascal(Rascal { source }));
+    let inline = |text: &str| rascal(RascalSource::Inline(text.to_owned()));
+
+    assert_eq!(parse(r#"Rascal("trace(1);")"#), inline("trace(1);"));
+    assert_eq!(
+        parse(r##"Rascal(r#"trace("a");"#)"##),
+        inline(r#"trace("a");"#)
+    );
+    assert_eq!(parse(r#"Rascal(source: "trace(1);")"#), inline("trace(1);"));
+    // The struct can also be written in its own parentheses.
+    assert_eq!(
+        parse(r#"Rascal((source: "trace(1);"))"#),
+        inline("trace(1);")
+    );
+    assert_eq!(
+        parse(r#"Rascal(file: "a.as")"#),
+        rascal(RascalSource::File("a.as".to_owned()))
+    );
+
+    let parse_err = |data| parse(data).unwrap_err();
+    assert!(parse_err("Rascal(source: \"a\", file: \"b\")").contains("found both"));
+    assert!(parse_err("Rascal(source: None)").contains("expected `source` or `file`"));
+    assert!(parse_err("Rascal(1)").contains("Expected a script or a struct"));
+    assert!(parse_err("Rascal()").contains("Expected a script or a struct"));
+    assert!(parse_err("Rascal(script: \"a\")").contains(
+        "Unexpected field named `script` in `Rascal`, expected either `source` or `file`"
+    ));
+}
+
+#[cfg(feature = "rascal")]
+mod rascal {
+    use super::*;
+
+    /// Provides the given files, with their contents as text.
+    struct TextFiles(&'static [(&'static str, &'static str)]);
+
+    impl FileProvider for TextFiles {
+        fn read(&self, path: &str) -> anyhow::Result<Vec<u8>> {
+            let (_, contents) = self
+                .0
+                .iter()
+                .find(|(name, _)| *name == path)
+                .ok_or_else(|| anyhow::anyhow!("no file named {path}"))?;
+            Ok(contents.as_bytes().to_vec())
+        }
+    }
+
+    #[test]
+    fn script() {
+        // A constant pool with "hello", a push of the constant, Trace and End.
+        let hello = [
+            [0x12, 0x03, 0x88, 0x08, 0x00, 0x01, 0x00].as_slice(),
+            b"hello\0",
+            &[0x96, 0x02, 0x00, 0x08, 0x00, 0x26, 0x00],
+        ]
+        .concat();
+        assert_eq!(
+            compile_tags!(r##"DoAction(Rascal(r#"trace("hello");"#))"##),
+            hello
+        );
+        assert_eq!(
+            compile_tags!(r##"DoAction(Rascal(source: r#"trace("hello");"#))"##),
+            hello
+        );
+        // A script without code compiles to no bytecode, not even End.
+        assert_eq!(compile_tags!(r#"DoAction(Rascal(""))"#), [0x00, 0x03]);
+        assert_eq!(
+            compile_tags!(r#"DoAction(Rascal("// nothing"))"#),
+            [0x00, 0x03]
+        );
+        // The bytecode can be used as any other data.
+        assert_eq!(
+            compile_tags!(r#"DefineBinaryData(id: 1, data: Rascal(""))"#),
+            [0xC6, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn pcode() {
+        // An empty constant pool, a push of "hello", Trace and End.
+        assert_eq!(
+            compile_tags!(
+                r##"DoAction(Rascal(r#"
+                    @PCode {
+                        Push "hello"
+                        Trace
+                    }
+                "#))"##
+            ),
+            [
+                [0x11, 0x03, 0x88, 0x02, 0x00, 0x00, 0x00].as_slice(),
+                &[0x96, 0x07, 0x00, 0x00],
+                b"hello\0",
+                &[0x26, 0x00]
+            ]
+            .concat()
+        );
+    }
+
+    #[test]
+    fn swf_version() {
+        // Functions are defined with DefineFunction2 (0x8E) from SWF 7, and with
+        // DefineFunction (0x9B) before.
+        let compile = |version| {
+            swfasm::compile_str(
+                &format!(
+                    r#"Swf(version: {version}, tags: [
+                        DoAction(Rascal("function f(a) {{ trace(a); }}")),
+                    ])"#
+                ),
+                &NoFiles,
+            )
+            .unwrap()
+        };
+        assert!(compile(6).contains(&0x9B) && !compile(6).contains(&0x8E));
+        assert!(compile(7).contains(&0x8E) && !compile(7).contains(&0x9B));
+    }
+
+    #[test]
+    fn includes() {
+        let files = TextFiles(&[("a/b.as", r#"trace("hello");"#)]);
+        assert_eq!(
+            compile_tags!(r##"DoAction(Rascal(r#"#include "a/b.as""#))"##, &files),
+            compile_tags!(r##"DoAction(Rascal(r#"trace("hello");"#))"##)
+        );
+        // Errors of the provider are kept.
+        assert!(
+            compile_err!(
+                r##"Swf(version: 10, tags: [DoAction(Rascal(r#"#include "c.as""#))])"##,
+                &files
+            )
+            .contains("Could not load file 'c.as': no file named c.as")
+        );
+        assert!(
+            compile_err!(r##"Swf(version: 10, tags: [DoAction(Rascal(r#"#include "c.as""#))])"##)
+                .contains("Could not load file 'c.as': files are not available")
+        );
+    }
+
+    #[test]
+    fn file() {
+        let files = TextFiles(&[
+            ("a/b.as", r#"trace("hello");"#),
+            // Included files are relative to the swfasm source, not to the
+            // file that includes them.
+            ("a/c.as", r#"#include "a/b.as""#),
+            ("d.as", "class Foo {}"),
+        ]);
+        let inline = compile_tags!(r##"DoAction(Rascal(r#"trace("hello");"#))"##);
+        assert_eq!(
+            compile_tags!(r#"DoAction(Rascal(file: "a/b.as"))"#, &files),
+            inline
+        );
+        assert_eq!(
+            compile_tags!(r#"DoAction(Rascal(file: "a/c.as"))"#, &files),
+            inline
+        );
+        // Errors point to the file.
+        assert!(
+            compile_err!(
+                r#"Swf(version: 10, tags: [DoAction(Rascal(file: "d.as"))])"#,
+                &files
+            )
+            .contains("failed to compile the ActionScript: error: Compile error\n  ╭▸ d.as:1:1")
+        );
+        assert!(
+            compile_err!(
+                r#"Swf(version: 10, tags: [DoAction(Rascal(file: "e.as"))])"#,
+                &files
+            )
+            .contains("failed to compile the ActionScript: error: no file named e.as\n ─▸ e.as")
+        );
+    }
+
+    #[test]
+    fn errors() {
+        assert!(
+            compile_err!(r#"Swf(version: 10, tags: [ShowFrame, DoAction(Rascal("trace("))])"#)
+                .contains("tag #1: failed to compile the ActionScript: error: Compile error")
+        );
+        assert!(
+            compile_err!(r#"Swf(version: 10, tags: [DoAction(Rascal("trace(\n1 2)"))])"#)
+                .contains("╭▸ <inline>:2:3")
+        );
+        // Classes are loaded from files, and compiled into separate tags.
+        let files = TextFiles(&[("Foo.as", "class Foo {}"), ("a/Bar.as", "class a.Bar {}")]);
+        assert!(
+            compile_err!(
+                r#"Swf(version: 10, tags: [DoAction(Rascal("var foo = new Foo();"))])"#,
+                &files
+            )
+            .contains("classes and interfaces are not supported")
+        );
+        assert!(
+            compile_err!(
+                r#"Swf(version: 10, tags: [DoAction(Rascal("import a.Bar; var bar: Bar;"))])"#,
+                &files
+            )
+            .contains("classes and interfaces are not supported")
+        );
+        assert!(
+            compile_err!(r#"Swf(version: 10, tags: [DoAction(Rascal("class Foo {}"))])"#)
+                .contains("Classes may only be defined in external ActionScript 2.0 class scripts")
+        );
+    }
+}
+
+#[cfg(not(feature = "rascal"))]
+#[test]
+fn rascal_not_available() {
+    for data in [r#"Rascal("")"#, r#"Rascal(file: "a.as")"#] {
+        let source = format!("Swf(version: 10, tags: [DoAction({data})])");
+        // Sources that use Rascal are parsed, but fail to compile.
+        swfasm::parse(&source).unwrap();
+        assert!(compile_err!(source).contains("Rascal is not available"));
+    }
 }

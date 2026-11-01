@@ -34,7 +34,7 @@ use swf::{
 /// ```
 pub fn parse(text: &str) -> Result<Swf> {
     Ok(ron::Options::default()
-        .with_default_extension(Extensions::IMPLICIT_SOME)
+        .with_default_extension(Extensions::IMPLICIT_SOME | Extensions::UNWRAP_VARIANT_NEWTYPES)
         .from_str(text)?)
 }
 
@@ -187,7 +187,7 @@ fn write_tag(
             character_id: Some(*character),
         }),
         Tag::DoAction(action_data) => {
-            data = read_data(action_data, files)?;
+            data = read_data(action_data, swf_version, files)?;
             swf::Tag::DoAction(&data)
         }
         Tag::RemoveObject2 { depth } => swf::Tag::RemoveObject(RemoveObject {
@@ -222,7 +222,7 @@ fn write_tag(
             id,
             data: binary_data,
         } => {
-            data = read_data(binary_data, files)?;
+            data = read_data(binary_data, swf_version, files)?;
             swf::Tag::DefineBinaryData(DefineBinaryData {
                 id: *id,
                 data: &data,
@@ -234,7 +234,7 @@ fn write_tag(
             force_long: false,
         } => {
             check_tag_code(*code)?;
-            data = read_data(body, files)?;
+            data = read_data(body, swf_version, files)?;
             swf::Tag::Unknown {
                 tag_code: *code,
                 data: &data,
@@ -246,7 +246,7 @@ fn write_tag(
             force_long: true,
         } => {
             check_tag_code(*code)?;
-            data = read_data(body, files)?;
+            data = read_data(body, swf_version, files)?;
 
             // TODO Maybe add support to the swf crate?
             let length = u32::try_from(data.len()).context("tag body too long")?;
@@ -261,14 +261,30 @@ fn write_tag(
     Ok(())
 }
 
-/// Returns the bytes of binary data, reading them from `files` if needed.
-fn read_data<'a>(data: &'a Data, files: &dyn FileProvider) -> Result<Cow<'a, [u8]>> {
+/// Returns the bytes of binary data, reading them from `files` or compiling
+/// them if needed.
+fn read_data<'a>(
+    data: &'a Data,
+    swf_version: u8,
+    files: &dyn FileProvider,
+) -> Result<Cow<'a, [u8]>> {
     match data {
         Data::InlineBytes(bytes) => Ok(Cow::Borrowed(&bytes.0)),
         Data::File(path) => files
             .read(path)
             .map(Cow::Owned)
             .with_context(|| format!("failed to read file \"{path}\"")),
+        Data::Rascal(script) => cfg_select! {
+            feature = "rascal" => {
+                crate::rascal::compile(script, swf_version, files)
+                    .map(Cow::Owned)
+                    .context("failed to compile the ActionScript")
+            }
+            _ => {{
+                let _ = (script, swf_version);
+                bail!("Rascal is not available")
+            }}
+        },
     }
 }
 

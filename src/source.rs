@@ -232,6 +232,12 @@ pub enum Data {
     ///
     /// Files are relative to the swfasm source.
     File(String),
+
+    /// AVM1 bytecode compiled by Rascal from an ActionScript 2 script.
+    ///
+    /// Requires the `rascal` feature: without it, sources that use it fail to
+    /// compile.
+    Rascal(Rascal),
 }
 
 /// Binary data, written as a hex string with optional whitespace (`"01 02 ff"`),
@@ -303,6 +309,84 @@ impl<'de> Deserialize<'de> for Bytes {
         }
 
         deserializer.deserialize_any(BytesVisitor)
+    }
+}
+
+/// An ActionScript 2 script, compiled by Rascal.
+///
+/// ```ron
+/// // The script itself.
+/// data: Rascal(r#"trace("hello");"#),
+///
+/// // The same, written as a struct.
+/// data: Rascal(source: r#"trace("hello");"#),
+///
+/// // A file with the script, relative to the swfasm source.
+/// data: Rascal(file: "script.as"),
+/// ```
+///
+/// - The script is loose code, like a frame script. Classes and interfaces are
+///   not supported.
+/// - It is compiled for the SWF version of the file.
+/// - Files included with `#include` are relative to the swfasm source too.
+/// - Pcode can be written in `@PCode { ... }` blocks.
+#[derive(Debug, PartialEq)]
+pub struct Rascal {
+    /// The script.
+    pub source: RascalSource,
+}
+
+/// Where the script of [`Rascal`] comes from.
+#[derive(Debug, PartialEq)]
+pub enum RascalSource {
+    /// The text of the script, from `source`.
+    Inline(String),
+
+    /// The path of a file with the script, from `file`.
+    File(String),
+}
+
+impl<'de> Deserialize<'de> for Rascal {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct RascalVisitor;
+
+        impl<'de> Visitor<'de> for RascalVisitor {
+            type Value = Rascal;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a script or a struct")
+            }
+
+            fn visit_str<E: de::Error>(self, source: &str) -> Result<Rascal, E> {
+                Ok(Rascal {
+                    source: RascalSource::Inline(source.to_owned()),
+                })
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, map: A) -> Result<Rascal, A::Error> {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Fields {
+                    source: Option<String>,
+                    file: Option<String>,
+                }
+
+                let fields = Fields::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                let source = match (fields.source, fields.file) {
+                    (Some(source), None) => RascalSource::Inline(source),
+                    (None, Some(path)) => RascalSource::File(path),
+                    (None, None) => return Err(de::Error::custom("expected `source` or `file`")),
+                    (Some(_), Some(_)) => {
+                        return Err(de::Error::custom(
+                            "expected `source` or `file`, but found both",
+                        ));
+                    }
+                };
+                Ok(Rascal { source })
+            }
+        }
+
+        deserializer.deserialize_any(RascalVisitor)
     }
 }
 

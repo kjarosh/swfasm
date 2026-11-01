@@ -20,14 +20,19 @@ version.workspace = true
 
 [dependencies]
 anyhow = "1.0"
+rascal = { version = "0.3.6", optional = true }
 ron = "0.12.2"
 serde = { version = "1.0.228", features = ["derive"] }
 swf = { git = "https://github.com/ruffle-rs/ruffle", rev = "49f93212b281f784de317aea9abd430e18345e21" }
 
 [features]
+default = ["rascal"]
 # Utilities for reading files from the file system. Without it, the library
 # doesn't use paths at all.
 fs = []
+# Compiling ActionScript with Rascal, enabled by default. Without it, sources
+# that use Rascal fail to compile.
+rascal = ["dep:rascal"]
 
 [dev-dependencies]
 libtest-mimic = "0.8.2"
