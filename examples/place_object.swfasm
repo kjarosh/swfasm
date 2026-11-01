@@ -1,0 +1,56 @@
+// Characters placed on the display list, then modified and removed.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+        DefineSprite(id: 1, tags: [ShowFrame, End]),
+
+        // Frame 1
+        PlaceObject2(
+            depth: 1,
+            character: 1,              // places a new character at the depth
+            matrix: (                  // all values default to the identity matrix
+                scale_x: 2,
+                scale_y: 2,
+                translate_x: 100,      // in pixels
+                translate_y: 50.5,
+            ),
+            color_transform: (         // multiplication terms default to 1, addition terms to 0
+                alpha_mult: 0.5,
+                red_add: 255,
+            ),
+            name: "clip",              // the instance name
+            clip_actions: [            // AVM1 event handlers
+                (
+                    events: [Load],
+                    actions: Rascal(r#"trace("loaded");"#),
+                ),
+                (
+                    events: [KeyPress],
+                    key_code: 0x61,    // the "a" key
+                    actions: Rascal(r#"trace("pressed");"#),
+                ),
+            ],
+        ),
+        PlaceObject(
+            character: 1,
+            depth: 2,
+            matrix: (translate_x: 300),
+        ),
+        ShowFrame,
+
+        // Frame 2
+        PlaceObject2(
+            depth: 1,
+            move: true,                // modifies the character at the depth
+            matrix: (rotate_skew0: 1, rotate_skew1: -1),
+        ),
+        RemoveObject(character: 1, depth: 2),
+        ShowFrame,
+
+        // Frame 3
+        RemoveObject2(depth: 1),
+        ShowFrame,
+        End,
+    ],
+)
