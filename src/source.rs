@@ -230,8 +230,7 @@ pub enum Data {
 
     /// The contents of a file, written as `File("data.bin")`.
     ///
-    /// How the path is interpreted is up to the
-    /// [`FileProvider`](crate::files::FileProvider) passed to the compiler.
+    /// Files are relative to the swfasm source.
     File(String),
 }
 

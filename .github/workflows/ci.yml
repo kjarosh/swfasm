@@ -41,4 +41,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --all-targets --locked
       - run: cargo test --locked
+      # The library alone, without the features that swfasm-cli enables.
+      - run: cargo test -p swfasm --locked
       - run: cargo doc --no-deps --locked
