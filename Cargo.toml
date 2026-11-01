@@ -36,3 +36,5 @@ walkdir = "2.5.0"
 [[test]]
 name = "examples"
 harness = false
+# The examples are compiled like swfasm-cli does, with files read by `Directory`.
+required-features = ["fs"]
