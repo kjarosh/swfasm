@@ -24,6 +24,11 @@ ron = "0.12.2"
 serde = { version = "1.0.228", features = ["derive"] }
 swf = { git = "https://github.com/ruffle-rs/ruffle", rev = "49f93212b281f784de317aea9abd430e18345e21" }
 
+[features]
+# Utilities for reading files from the file system. Without it, the library
+# doesn't use paths at all.
+fs = []
+
 [dev-dependencies]
 libtest-mimic = "0.8.2"
 walkdir = "2.5.0"

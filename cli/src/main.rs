@@ -3,7 +3,7 @@ mod cli;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::Opt;
-use swfasm::files::NoFiles;
+use swfasm::files::{Directory, FileProvider, NoFiles};
 
 fn main() -> Result<()> {
     let opt = Opt::parse();
@@ -23,8 +23,17 @@ fn main() -> Result<()> {
 
     let text = std::fs::read_to_string(&opt.input)
         .with_context(|| format!("Failed to read {}", opt.input.display()))?;
-    // TODO Read files.
-    let swf = swfasm::compile_str(&text, &NoFiles)
+    // Files are relative to the source file. A bare file name has an empty
+    // parent, which resolves against the working directory.
+    let directory;
+    let files: &dyn FileProvider = match opt.input.parent() {
+        Some(dir) => {
+            directory = Directory::new(dir);
+            &directory
+        }
+        None => &NoFiles,
+    };
+    let swf = swfasm::compile_str(&text, files)
         .with_context(|| format!("Failed to compile {}", opt.input.display()))?;
 
     std::fs::write(&output_path, swf)

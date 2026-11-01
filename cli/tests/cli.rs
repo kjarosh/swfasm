@@ -79,3 +79,68 @@ fn refuses_to_overwrite_swf_input() {
     );
     assert_eq!(std::fs::read_to_string(dir.join("in.swf")).unwrap(), SOURCE);
 }
+
+#[test]
+fn reads_files_relative_to_input() {
+    let dir = test_dir("relative_files");
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    std::fs::write(
+        dir.join("sub/in.swfasm"),
+        r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: File("data.bin"))])"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("sub/data.bin"), b"\x01\x02\x03").unwrap();
+    // A file of the same name next to the working directory must not be read.
+    std::fs::write(dir.join("data.bin"), b"wrong").unwrap();
+
+    for (cwd, input) in [
+        (dir.clone(), "sub/in.swfasm"),
+        (dir.join("sub"), "in.swfasm"),
+    ] {
+        let output = swfasm(&cwd, &[input, "-o", "out.swf"]);
+        assert!(output.status.success(), "{input}: {output:?}");
+        let swf = std::fs::read(cwd.join("out.swf")).unwrap();
+        assert!(swf.ends_with(b"\x01\x02\x03"), "{input}: {swf:?}");
+    }
+}
+
+#[test]
+fn reports_missing_files() {
+    let dir = test_dir("missing_file");
+    std::fs::write(
+        dir.join("in.swfasm"),
+        r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: File("missing.bin"))])"#,
+    )
+    .unwrap();
+    let output = swfasm(&dir, &["in.swfasm"]);
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains(r#"failed to read file "missing.bin""#),
+        "{output:?}"
+    );
+    assert!(!dir.join("in.swf").exists());
+}
+
+#[test]
+fn rejects_files_outside_input_directory() {
+    let dir = test_dir("outside_file");
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    std::fs::write(
+        dir.join("sub/in.swfasm"),
+        r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: File("../data.bin"))])"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("data.bin"), b"outside").unwrap();
+    let output = swfasm(&dir, &["sub/in.swfasm"]);
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(r#"failed to read file "../data.bin""#),
+        "{output:?}"
+    );
+    assert!(
+        stderr.contains("the path leads outside of the directory"),
+        "{output:?}"
+    );
+    assert!(!dir.join("sub/in.swf").exists());
+}
