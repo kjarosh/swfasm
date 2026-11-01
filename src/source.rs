@@ -348,6 +348,12 @@ pub struct Rascal {
     ///
     /// Defaults to true.
     pub fold_constants: bool,
+
+    /// Whether local variables of functions are stored in registers instead of
+    /// by name. It has an effect only from SWF 7, which has registers.
+    ///
+    /// Defaults to true.
+    pub promote_variables_to_registers: bool,
 }
 
 /// Where the script of [`Rascal`] comes from.
@@ -376,6 +382,7 @@ impl<'de> Deserialize<'de> for Rascal {
                     source: RascalSource::Inline(source.to_owned()),
                     swf_version: None,
                     fold_constants: true,
+                    promote_variables_to_registers: true,
                 })
             }
 
@@ -387,6 +394,7 @@ impl<'de> Deserialize<'de> for Rascal {
                     file: Option<String>,
                     swf_version: Option<u8>,
                     fold_constants: Option<bool>,
+                    promote_variables_to_registers: Option<bool>,
                 }
 
                 let fields = Fields::deserialize(de::value::MapAccessDeserializer::new(map))?;
@@ -404,6 +412,9 @@ impl<'de> Deserialize<'de> for Rascal {
                     source,
                     swf_version: fields.swf_version,
                     fold_constants: fields.fold_constants.unwrap_or(true),
+                    promote_variables_to_registers: fields
+                        .promote_variables_to_registers
+                        .unwrap_or(true),
                 })
             }
         }

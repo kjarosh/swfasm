@@ -643,11 +643,13 @@ fn rascal_syntax() {
         source: RascalSource::Inline(text.to_owned()),
         swf_version: None,
         fold_constants: true,
+        promote_variables_to_registers: true,
     };
     let file = |path: &str| Rascal {
         source: RascalSource::File(path.to_owned()),
         swf_version: None,
         fold_constants: true,
+        promote_variables_to_registers: true,
     };
 
     assert_eq!(parse(r#"Rascal("trace(1);")"#), rascal(inline("trace(1);")));
@@ -690,6 +692,13 @@ fn rascal_syntax() {
         parse(r#"Rascal(file: "a.as", fold_constants: true)"#),
         rascal(file("a.as"))
     );
+    assert_eq!(
+        parse(r#"Rascal(file: "a.as", promote_variables_to_registers: false)"#),
+        rascal(Rascal {
+            promote_variables_to_registers: false,
+            ..file("a.as")
+        })
+    );
 
     let parse_err = |data| parse(data).unwrap_err();
     assert!(parse_err("Rascal(source: \"a\", file: \"b\")").contains("found both"));
@@ -702,7 +711,7 @@ fn rascal_syntax() {
     assert!(parse_err("Rascal()").contains("Expected a script or a struct"));
     assert!(parse_err("Rascal(script: \"a\")").contains(
         "Unexpected field named `script` in `Rascal`, expected one of `source`, `file`, \
-        `swf_version`, or `fold_constants`"
+        `swf_version`, `fold_constants`, or `promote_variables_to_registers`"
     ));
 }
 
@@ -821,6 +830,39 @@ mod rascal {
                 0x15, 0x03, 0x88, 0x02, 0x00, 0x00, 0x00, 0x96, 0x0A, 0x00, 0x07, 0x01, 0x00, 0x00,
                 0x00, 0x07, 0x02, 0x00, 0x00, 0x00, 0x47, 0x26, 0x00
             ]
+        );
+    }
+
+    #[test]
+    fn promote_variables_to_registers() {
+        // A local variable is stored with StoreRegister (0x87) when it is
+        // promoted to a register, and with DefineLocal (0x3C) otherwise.
+        let promoted =
+            compile_tags!(r#"DoAction(Rascal("function f() { var x = 1; trace(x); }"))"#);
+        let not_promoted = compile_tags!(
+            r#"DoAction(Rascal(
+                source: "function f() { var x = 1; trace(x); }",
+                promote_variables_to_registers: false,
+            ))"#
+        );
+        assert!(promoted.contains(&0x87) && !promoted.contains(&0x3C));
+        assert!(not_promoted.contains(&0x3C) && !not_promoted.contains(&0x87));
+
+        // Before SWF 7, there are no registers to promote to.
+        let compile = |options| {
+            swfasm::compile_str(
+                &format!(
+                    r#"Swf(version: 6, tags: [
+                        DoAction(Rascal(source: "function f() {{ var x = 1; trace(x); }}"{options})),
+                    ])"#
+                ),
+                &NoFiles,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            compile(""),
+            compile(", promote_variables_to_registers: false")
         );
     }
 
