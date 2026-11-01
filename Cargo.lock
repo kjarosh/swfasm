@@ -548,7 +548,7 @@ dependencies = [
 [[package]]
 name = "swf"
 version = "0.3.0"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=49f93212b281f784de317aea9abd430e18345e21#49f93212b281f784de317aea9abd430e18345e21"
+source = "git+https://github.com/ruffle-rs/ruffle?rev=a508f6f972ac64a2ef5944b9a79f9868a3f349be#a508f6f972ac64a2ef5944b9a79f9868a3f349be"
 dependencies = [
  "bitflags",
  "bitstream-io",
@@ -571,7 +571,7 @@ dependencies = [
  "rascal",
  "ron",
  "serde",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=49f93212b281f784de317aea9abd430e18345e21)",
+ "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=a508f6f972ac64a2ef5944b9a79f9868a3f349be)",
  "walkdir",
 ]
 
