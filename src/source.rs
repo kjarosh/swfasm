@@ -151,6 +151,58 @@ pub enum Tag {
     /// The data is AVM1 bytecode.
     DoAction(Data),
 
+    /// Places a character on the display list, or modifies one placed earlier
+    /// (code 26).
+    ///
+    /// The optional fields are written only when set, along with the flags
+    /// saying that they are present.
+    PlaceObject2 {
+        /// The depth of the character.
+        depth: u16,
+
+        /// Whether to modify the character at the depth (the `PlaceFlagMove`
+        /// flag).
+        #[serde(default)]
+        r#move: bool,
+
+        /// The ID of the character to place.
+        #[serde(default)]
+        character: Option<u16>,
+
+        /// The transformation matrix.
+        #[serde(default)]
+        matrix: Option<Matrix>,
+
+        /// The color transform.
+        #[serde(default)]
+        color_transform: Option<ColorTransform>,
+
+        /// The morph ratio, from 0 (the start shape) to 65535 (the end shape).
+        #[serde(default)]
+        ratio: Option<u16>,
+
+        /// The instance name, written as UTF-8.
+        ///
+        /// It must not contain null characters.
+        #[serde(default)]
+        name: Option<String>,
+
+        /// Makes the character a clipping mask for the characters up to this
+        /// depth.
+        #[serde(default)]
+        clip_depth: Option<u16>,
+
+        /// Event handlers of a sprite, in AVM1.
+        #[serde(default)]
+        clip_actions: Option<Vec<ClipAction>>,
+
+        /// The events of all the clip actions (`AllEventFlags`).
+        ///
+        /// Defaults to the events of the clip actions combined.
+        #[serde(default)]
+        all_clip_events: Option<Vec<ClipEvent>>,
+    },
+
     /// Removes the character at a depth from the display list (code 28).
     RemoveObject2 {
         /// The depth of the character to remove.
@@ -357,6 +409,48 @@ pub struct ColorTransform {
 
 fn one() -> f64 {
     1.0
+}
+
+/// An event handler of a sprite (`CLIPACTIONRECORD`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClipAction {
+    /// The events that run the actions.
+    ///
+    /// Before SWF 6, event flags are stored in 16 bits, so `DragOut`,
+    /// `KeyPress` and `Construct` are an error.
+    pub events: Vec<ClipEvent>,
+
+    /// The key that runs the actions on `KeyPress`.
+    #[serde(default)]
+    pub key_code: Option<u8>,
+
+    /// The AVM1 bytecode.
+    pub actions: Data,
+}
+
+/// An event of a sprite, with the value of its flag in `CLIPEVENTFLAGS`.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub enum ClipEvent {
+    Load = 1 << 0,
+    EnterFrame = 1 << 1,
+    Unload = 1 << 2,
+    MouseMove = 1 << 3,
+    MouseDown = 1 << 4,
+    MouseUp = 1 << 5,
+    KeyDown = 1 << 6,
+    KeyUp = 1 << 7,
+    Data = 1 << 8,
+    Initialize = 1 << 9,
+    Press = 1 << 10,
+    Release = 1 << 11,
+    ReleaseOutside = 1 << 12,
+    RollOver = 1 << 13,
+    RollOut = 1 << 14,
+    DragOver = 1 << 15,
+    DragOut = 1 << 16,
+    KeyPress = 1 << 17,
+    Construct = 1 << 18,
 }
 
 /// Binary data.
