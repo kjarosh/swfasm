@@ -323,17 +323,25 @@ impl<'de> Deserialize<'de> for Bytes {
 ///
 /// // A file with the script, relative to the swfasm source.
 /// data: Rascal(file: "script.as"),
+///
+/// // Compiled for SWF 6, instead of the version of the file.
+/// data: Rascal(file: "script.as", swf_version: 6),
 /// ```
 ///
 /// - The script is loose code, like a frame script. Classes and interfaces are
 ///   not supported.
-/// - It is compiled for the SWF version of the file.
+/// - It is compiled for the SWF version of the file, unless `swf_version` says
+///   otherwise.
 /// - Files included with `#include` are relative to the swfasm source too.
 /// - Pcode can be written in `@PCode { ... }` blocks.
 #[derive(Debug, PartialEq)]
 pub struct Rascal {
     /// The script.
     pub source: RascalSource,
+
+    /// The SWF version to compile the script for, instead of the version of
+    /// the SWF file.
+    pub swf_version: Option<u8>,
 }
 
 /// Where the script of [`Rascal`] comes from.
@@ -360,6 +368,7 @@ impl<'de> Deserialize<'de> for Rascal {
             fn visit_str<E: de::Error>(self, source: &str) -> Result<Rascal, E> {
                 Ok(Rascal {
                     source: RascalSource::Inline(source.to_owned()),
+                    swf_version: None,
                 })
             }
 
@@ -369,6 +378,7 @@ impl<'de> Deserialize<'de> for Rascal {
                 struct Fields {
                     source: Option<String>,
                     file: Option<String>,
+                    swf_version: Option<u8>,
                 }
 
                 let fields = Fields::deserialize(de::value::MapAccessDeserializer::new(map))?;
@@ -382,7 +392,10 @@ impl<'de> Deserialize<'de> for Rascal {
                         ));
                     }
                 };
-                Ok(Rascal { source })
+                Ok(Rascal {
+                    source,
+                    swf_version: fields.swf_version,
+                })
             }
         }
 
