@@ -18,12 +18,7 @@ Swf(
             ],
         ),
 
-        // PlaceObject2, which places the sprite on the stage.
-        Raw(code: 26, data: InlineBytes([
-            "02",    // flags: has character
-            "01 00", // depth
-            "01 00", // character ID
-        ])),
+        PlaceObject2(depth: 1, character: 1), // places the sprite on the stage
 
         ShowFrame,
         End,
