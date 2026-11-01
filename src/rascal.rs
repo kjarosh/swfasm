@@ -28,7 +28,9 @@ pub(crate) fn compile(
         RascalSource::File(path) => (path.as_str(), None),
     };
     let swf_version = script.swf_version.unwrap_or(swf_version);
-    let optimizations = OptimizationOptions::full().with_fold_constants(script.fold_constants);
+    let optimizations = OptimizationOptions::full()
+        .with_fold_constants(script.fold_constants)
+        .with_promote_variables_to_registers(script.promote_variables_to_registers);
     let options = CompileOptions::default()
         .with_swf_version(swf_version)
         .with_optimizations(optimizations);
