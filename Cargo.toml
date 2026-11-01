@@ -5,6 +5,7 @@ default-members = [".", "cli"]
 [workspace.package]
 authors = ["Kamil Jarosz <kjarosh256@gmail.com>"]
 edition = "2024"
+keywords = ["swf", "flash", "assembler", "compiler", "ron"]
 license = "MIT"
 repository = "https://github.com/kjarosh/swfasm"
 version = "0.0.0"
@@ -12,8 +13,10 @@ version = "0.0.0"
 [package]
 name = "swfasm"
 description = "A compiler that turns a textual representation into SWF files"
+categories = ["compilers", "encoding"]
 authors.workspace = true
 edition.workspace = true
+keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true

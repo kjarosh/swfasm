@@ -1,8 +1,11 @@
 [package]
 name = "swfasm-cli"
-description = "A compiler that turns a textual representation into SWF files"
+description = "A command line tool that compiles a textual representation into SWF files"
+readme = "../README.md"
+categories = ["command-line-utilities", "compilers"]
 authors.workspace = true
 edition.workspace = true
+keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
