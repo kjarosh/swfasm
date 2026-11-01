@@ -1,13 +1,15 @@
 //! Compiles the textual (RON) representation of a SWF file into a SWF file.
 
+mod place_object;
+
 use crate::files::FileProvider;
 use crate::source::{Data, Swf, Tag};
 use anyhow::{Context, Result, bail};
 use ron::extensions::Extensions;
 use std::borrow::Cow;
 use swf::{
-    Color, DefineBinaryData, FileAttributes, Fixed8, Header, Rectangle, RemoveObject, TagCode,
-    Twips,
+    Color, DefineBinaryData, FileAttributes, Fixed8, Fixed16, Header, Rectangle, RemoveObject,
+    TagCode, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -126,6 +128,15 @@ fn fixed8(value: f64) -> Result<Fixed8> {
     Ok(fixed)
 }
 
+/// Converts a number to 16.16 fixed point, failing if it is not exactly representable.
+fn fixed16(value: f64) -> Result<Fixed16> {
+    let fixed = Fixed16::from_f64(value);
+    if fixed.to_f64() != value {
+        bail!("{value} is not representable as a 16.16 fixed point number");
+    }
+    Ok(fixed)
+}
+
 /// Returns the explicit frame count, or else the number of `ShowFrame` tags.
 fn num_frames(explicit: Option<u16>, tags: &[Tag]) -> Result<u16> {
     match explicit {
@@ -161,6 +172,7 @@ fn write_tag(
     let swf_tag = match tag {
         Tag::ShowFrame => swf::Tag::ShowFrame,
         Tag::End => swf::Tag::End,
+        Tag::PlaceObject { .. } => swf::Tag::PlaceObject(Box::new(place_object::convert(tag)?)),
         Tag::FileAttributes {
             action_script_3,
             use_network,
