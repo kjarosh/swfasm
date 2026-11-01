@@ -6,7 +6,7 @@ default-members = [".", "cli"]
 authors = ["Kamil Jarosz <kjarosh256@gmail.com>"]
 edition = "2024"
 keywords = ["swf", "flash", "assembler", "compiler", "ron"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/kjarosh/swfasm"
 version = "0.0.0"
 
