@@ -342,6 +342,12 @@ pub struct Rascal {
     /// The SWF version to compile the script for, instead of the version of
     /// the SWF file.
     pub swf_version: Option<u8>,
+
+    /// Whether constant expressions are evaluated at compile time, e.g.
+    /// `trace(1 + 2)` pushes `3` instead of adding `1` and `2`.
+    ///
+    /// Defaults to true.
+    pub fold_constants: bool,
 }
 
 /// Where the script of [`Rascal`] comes from.
@@ -369,6 +375,7 @@ impl<'de> Deserialize<'de> for Rascal {
                 Ok(Rascal {
                     source: RascalSource::Inline(source.to_owned()),
                     swf_version: None,
+                    fold_constants: true,
                 })
             }
 
@@ -379,6 +386,7 @@ impl<'de> Deserialize<'de> for Rascal {
                     source: Option<String>,
                     file: Option<String>,
                     swf_version: Option<u8>,
+                    fold_constants: Option<bool>,
                 }
 
                 let fields = Fields::deserialize(de::value::MapAccessDeserializer::new(map))?;
@@ -395,6 +403,7 @@ impl<'de> Deserialize<'de> for Rascal {
                 Ok(Rascal {
                     source,
                     swf_version: fields.swf_version,
+                    fold_constants: fields.fold_constants.unwrap_or(true),
                 })
             }
         }

@@ -6,7 +6,7 @@
 
 use crate::files::FileProvider;
 use crate::source::{Rascal, RascalSource};
-use ::rascal::{CompileOptions, ProgramBuilder, SourceProvider, SwfOptions};
+use ::rascal::{CompileOptions, OptimizationOptions, ProgramBuilder, SourceProvider, SwfOptions};
 use anyhow::{Result, anyhow, bail};
 use std::io;
 
@@ -28,8 +28,11 @@ pub(crate) fn compile(
         RascalSource::File(path) => (path.as_str(), None),
     };
     let swf_version = script.swf_version.unwrap_or(swf_version);
-    let mut builder = ProgramBuilder::new(Sources { inline, files })
-        .with_compile_options(CompileOptions::default().with_swf_version(swf_version));
+    let optimizations = OptimizationOptions::full().with_fold_constants(script.fold_constants);
+    let options = CompileOptions::default()
+        .with_swf_version(swf_version)
+        .with_optimizations(optimizations);
+    let mut builder = ProgramBuilder::new(Sources { inline, files }).with_compile_options(options);
     builder.add_script(path);
     let program = builder
         .build()

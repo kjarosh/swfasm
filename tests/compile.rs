@@ -642,10 +642,12 @@ fn rascal_syntax() {
     let inline = |text: &str| Rascal {
         source: RascalSource::Inline(text.to_owned()),
         swf_version: None,
+        fold_constants: true,
     };
     let file = |path: &str| Rascal {
         source: RascalSource::File(path.to_owned()),
         swf_version: None,
+        fold_constants: true,
     };
 
     assert_eq!(parse(r#"Rascal("trace(1);")"#), rascal(inline("trace(1);")));
@@ -677,6 +679,17 @@ fn rascal_syntax() {
             ..file("a.as")
         })
     );
+    assert_eq!(
+        parse(r#"Rascal(file: "a.as", fold_constants: false)"#),
+        rascal(Rascal {
+            fold_constants: false,
+            ..file("a.as")
+        })
+    );
+    assert_eq!(
+        parse(r#"Rascal(file: "a.as", fold_constants: true)"#),
+        rascal(file("a.as"))
+    );
 
     let parse_err = |data| parse(data).unwrap_err();
     assert!(parse_err("Rascal(source: \"a\", file: \"b\")").contains("found both"));
@@ -688,8 +701,8 @@ fn rascal_syntax() {
     assert!(parse_err("Rascal(1)").contains("Expected a script or a struct"));
     assert!(parse_err("Rascal()").contains("Expected a script or a struct"));
     assert!(parse_err("Rascal(script: \"a\")").contains(
-        "Unexpected field named `script` in `Rascal`, expected one of `source`, `file`, or \
-        `swf_version`"
+        "Unexpected field named `script` in `Rascal`, expected one of `source`, `file`, \
+        `swf_version`, or `fold_constants`"
     ));
 }
 
@@ -789,6 +802,26 @@ mod rascal {
         assert!(swf7_as_6.contains(&0x9B) && !swf7_as_6.contains(&0x8E));
         assert_eq!(swf6_as_7[3], 6);
         assert_eq!(swf7_as_6[3], 7);
+    }
+
+    #[test]
+    fn fold_constants() {
+        // An empty constant pool, a push of the integer 3 and Trace.
+        assert_eq!(
+            compile_tags!(r#"DoAction(Rascal("trace(1 + 2);"))"#),
+            [
+                0x0F, 0x03, 0x88, 0x02, 0x00, 0x00, 0x00, 0x96, 0x05, 0x00, 0x07, 0x03, 0x00, 0x00,
+                0x00, 0x26, 0x00
+            ]
+        );
+        // A push of the integers 1 and 2, Add2 and Trace.
+        assert_eq!(
+            compile_tags!(r#"DoAction(Rascal(source: "trace(1 + 2);", fold_constants: false))"#),
+            [
+                0x15, 0x03, 0x88, 0x02, 0x00, 0x00, 0x00, 0x96, 0x0A, 0x00, 0x07, 0x01, 0x00, 0x00,
+                0x00, 0x07, 0x02, 0x00, 0x00, 0x00, 0x47, 0x26, 0x00
+            ]
+        );
     }
 
     #[test]
