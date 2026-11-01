@@ -3,6 +3,7 @@
 
 mod compile;
 pub mod files;
+mod rascal;
 pub mod source;
 
 pub use compile::{compile, compile_str, parse};
