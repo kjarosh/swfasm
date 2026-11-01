@@ -107,6 +107,28 @@ pub enum Tag {
     /// Displays the current frame and starts the next one (code 1).
     ShowFrame,
 
+    /// Places a character on the display list (code 4).
+    PlaceObject {
+        /// The ID of the character to place.
+        character: u16,
+
+        /// The depth to place the character at.
+        depth: u16,
+
+        /// The transformation matrix.
+        ///
+        /// Defaults to the identity matrix. The tag always contains a matrix.
+        #[serde(default)]
+        matrix: Matrix,
+
+        /// The color transform, written only when set.
+        ///
+        /// The tag stores no alpha terms, so `alpha_mult` must be 1 and
+        /// `alpha_add` must be 0.
+        #[serde(default)]
+        color_transform: Option<ColorTransform>,
+    },
+
     /// Removes a character from the display list (code 5).
     ///
     /// Superseded by `RemoveObject2`, which needs only the depth.
@@ -220,6 +242,121 @@ impl Tag {
             _ => false,
         }
     }
+}
+
+/// A transformation matrix (`MATRIX`), which transforms a point `(x, y)` into
+/// `(x * scale_x + y * rotate_skew1 + translate_x, x * rotate_skew0 + y *
+/// scale_y + translate_y)`.
+///
+/// Scale and rotate/skew values are stored as 16.16 fixed point numbers in at
+/// most 31 bits, so they must be multiples of 1/65536 between -16384 and
+/// 16383.9999847412109375. Translation is stored in twips in at most 31 bits,
+/// so it must be a multiple of 0.05 between -53687091.2 and 53687091.15. Values
+/// that are not representable are an error.
+///
+/// Scale and rotate/skew values are written only when they differ from the
+/// identity matrix.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Matrix {
+    /// The horizontal scale.
+    ///
+    /// Defaults to 1.
+    #[serde(default = "one")]
+    pub scale_x: f64,
+
+    /// The vertical scale.
+    ///
+    /// Defaults to 1.
+    #[serde(default = "one")]
+    pub scale_y: f64,
+
+    /// The first rotate/skew value, which adds `x * rotate_skew0` to `y`.
+    ///
+    /// Defaults to 0.
+    #[serde(default)]
+    pub rotate_skew0: f64,
+
+    /// The second rotate/skew value, which adds `y * rotate_skew1` to `x`.
+    ///
+    /// Defaults to 0.
+    #[serde(default)]
+    pub rotate_skew1: f64,
+
+    /// The horizontal translation, in pixels.
+    ///
+    /// Defaults to 0.
+    #[serde(default)]
+    pub translate_x: f64,
+
+    /// The vertical translation, in pixels.
+    ///
+    /// Defaults to 0.
+    #[serde(default)]
+    pub translate_y: f64,
+}
+
+impl Default for Matrix {
+    fn default() -> Self {
+        Self {
+            scale_x: 1.0,
+            scale_y: 1.0,
+            rotate_skew0: 0.0,
+            rotate_skew1: 0.0,
+            translate_x: 0.0,
+            translate_y: 0.0,
+        }
+    }
+}
+
+/// A color transform (`CXFORM` or `CXFORMWITHALPHA`): each color component is
+/// multiplied by its `_mult` term, and then its `_add` term is added to it.
+///
+/// Values are stored in at most 15 bits. Multiplication terms are stored as
+/// 8.8 fixed point numbers, so they must be multiples of 1/256 between -64 and
+/// 63.99609375. Addition terms must be between -16384 and 16383. Values that
+/// are not representable are an error.
+///
+/// Multiplication terms are written only when one of them is not 1, and
+/// addition terms only when one of them is not 0.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColorTransform {
+    /// Defaults to 1.
+    #[serde(default = "one")]
+    pub red_mult: f64,
+
+    /// Defaults to 1.
+    #[serde(default = "one")]
+    pub green_mult: f64,
+
+    /// Defaults to 1.
+    #[serde(default = "one")]
+    pub blue_mult: f64,
+
+    /// Defaults to 1.
+    #[serde(default = "one")]
+    pub alpha_mult: f64,
+
+    /// Defaults to 0.
+    #[serde(default)]
+    pub red_add: i16,
+
+    /// Defaults to 0.
+    #[serde(default)]
+    pub green_add: i16,
+
+    /// Defaults to 0.
+    #[serde(default)]
+    pub blue_add: i16,
+
+    /// Defaults to 0.
+    #[serde(default)]
+    pub alpha_add: i16,
+}
+
+fn one() -> f64 {
+    1.0
 }
 
 /// Binary data.

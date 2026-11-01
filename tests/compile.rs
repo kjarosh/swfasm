@@ -1,4 +1,7 @@
-use swf::{Compression, Fixed8, Rectangle, Twips};
+use swf::{
+    ColorTransform, Compression, Fixed8, Fixed16, Matrix, PlaceObject, PlaceObjectAction,
+    Rectangle, Twips,
+};
 use swfasm::files::{FileProvider, NoFiles};
 use swfasm::source::{Data, Rascal, RascalSource, Tag};
 
@@ -21,6 +24,49 @@ macro_rules! compile_tags {
         let header_len = compile("").unwrap().len();
         compile(&$tags).unwrap()[header_len..].to_vec()
     }};
+}
+
+/// Compiles the given `PlaceObject` tag of any version, and reads it back with
+/// the swf crate.
+macro_rules! read_place_object {
+    ($tag:expr) => {{
+        let swf = swfasm::compile_str(
+            &format!("Swf(version: 10, tags: [{}, End])", $tag),
+            &NoFiles,
+        )
+        .unwrap();
+        // Leaked, so that the tag can borrow from it.
+        let swf_buf = Box::leak(Box::new(swf::decompress_swf(&swf[..]).unwrap()));
+        // The End tag is not included in the tags.
+        match <[swf::Tag; 1]>::try_from(swf::parse_swf(swf_buf).unwrap().tags) {
+            Ok([swf::Tag::PlaceObject(place_object)]) => place_object,
+            tags => panic!("expected a single PlaceObject tag, got {tags:?}"),
+        }
+    }};
+}
+
+/// Returns a `PlaceObject` with only the version, the action and the depth set,
+/// for tests to set the other fields with `..`.
+fn bare_place_object(version: u8, action: PlaceObjectAction, depth: u16) -> PlaceObject<'static> {
+    PlaceObject {
+        version,
+        action,
+        depth,
+        matrix: None,
+        color_transform: None,
+        ratio: None,
+        name: None,
+        clip_depth: None,
+        class_name: None,
+        filters: None,
+        background_color: None,
+        blend_mode: None,
+        clip_actions: None,
+        has_image: false,
+        is_bitmap_cached: None,
+        is_visible: None,
+        amf_data: None,
+    }
 }
 
 /// Compiles the given source, which must fail, and returns the error message.
@@ -503,6 +549,192 @@ fn remove_object_errors() {
         compile_err!("Swf(version: 10, tags: [RemoveObject2(character: 1, depth: 1)])")
             .contains("Unexpected field named `character` in `RemoveObject2`")
     );
+}
+
+#[test]
+fn place_object() {
+    // The body is the character ID, the depth and the matrix, which is the
+    // identity matrix by default.
+    assert_eq!(
+        compile_tags!("PlaceObject(character: 0x1234, depth: 0x5678)"),
+        [0x05, 0x01, 0x34, 0x12, 0x78, 0x56, 0x00]
+    );
+    assert_eq!(
+        compile_tags!(
+            "PlaceObject(character: 1, depth: 2, matrix: (translate_x: 1, translate_y: -1))"
+        ),
+        [0x07, 0x01, 0x01, 0x00, 0x02, 0x00, 0x0C, 0xA5, 0x80]
+    );
+    // The color transform has no alpha terms.
+    assert_eq!(
+        compile_tags!("PlaceObject(character: 1, depth: 2, color_transform: (red_add: 255))"),
+        [
+            0x0A, 0x01, 0x01, 0x00, 0x02, 0x00, 0x00, 0xA5, 0xFE, 0x00, 0x00, 0x00
+        ]
+    );
+    assert_eq!(
+        compile_tags!("PlaceObject(character: 1, depth: 2, color_transform: ())"),
+        [0x06, 0x01, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00]
+    );
+
+    assert_eq!(
+        *read_place_object!(
+            "PlaceObject(
+                character: 1,
+                depth: 2,
+                matrix: (scale_x: 2),
+                color_transform: (red_mult: 0.5, green_add: -10, blue_add: 255),
+            )"
+        ),
+        PlaceObject {
+            matrix: Some(Matrix::scale(Fixed16::from_f64(2.0), Fixed16::ONE)),
+            color_transform: Some(ColorTransform {
+                r_multiply: Fixed8::from_f64(0.5),
+                g_add: -10,
+                b_add: 255,
+                ..Default::default()
+            }),
+            ..bare_place_object(1, PlaceObjectAction::Place(1), 2)
+        }
+    );
+}
+
+#[test]
+fn place_object_matrix() {
+    let matrix = "matrix: (
+        scale_x: 2,
+        scale_y: -0.5,
+        rotate_skew0: 0.25,
+        rotate_skew1: -1,
+        translate_x: 10.5,
+        translate_y: -3,
+    )";
+    assert_eq!(
+        compile_tags!(format!("PlaceObject(character: 1, depth: 2, {matrix})")),
+        [
+            0x12, 0x01, 0x01, 0x00, 0x02, 0x00, 0xCD, 0x00, 0x00, 0x78, 0x00, 0x0C, 0x48, 0x00,
+            0x10, 0x00, 0x04, 0xB4, 0xB8, 0x80
+        ]
+    );
+    assert_eq!(
+        *read_place_object!(format!("PlaceObject(character: 2, depth: 1, {matrix})")),
+        PlaceObject {
+            matrix: Some(Matrix {
+                a: Fixed16::from_f64(2.0),
+                b: Fixed16::from_f64(0.25),
+                c: Fixed16::from_f64(-1.0),
+                d: Fixed16::from_f64(-0.5),
+                tx: Twips::new(210),
+                ty: Twips::new(-60),
+            }),
+            ..bare_place_object(1, PlaceObjectAction::Place(2), 1)
+        }
+    );
+
+    // The extremes of the ranges, which use all 31 bits.
+    assert_eq!(
+        *read_place_object!(
+            "PlaceObject(character: 2, depth: 1, matrix: (
+                scale_x: -16384,
+                scale_y: 16383.9999847412109375,
+                rotate_skew0: 16383.9999847412109375,
+                rotate_skew1: -16384,
+                translate_x: -53687091.2,
+                translate_y: 53687091.15,
+            ))"
+        ),
+        PlaceObject {
+            matrix: Some(Matrix {
+                a: Fixed16::from_bits(-1 << 30),
+                b: Fixed16::from_bits((1 << 30) - 1),
+                c: Fixed16::from_bits(-1 << 30),
+                d: Fixed16::from_bits((1 << 30) - 1),
+                tx: Twips::new(-1 << 30),
+                ty: Twips::new((1 << 30) - 1),
+            }),
+            ..bare_place_object(1, PlaceObjectAction::Place(2), 1)
+        }
+    );
+}
+
+#[test]
+fn place_object_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
+    assert!(
+        err("PlaceObject(character: 1, depth: 1, color_transform: (alpha_mult: 0.5))")
+            .contains("tag #1: color_transform: PlaceObject cannot encode non-default alpha terms")
+    );
+    assert!(
+        err("PlaceObject(character: 1, depth: 1, color_transform: (alpha_add: 1))")
+            .contains("tag #1: color_transform: PlaceObject cannot encode non-default alpha terms")
+    );
+    assert!(
+        err("PlaceObject(depth: 1)")
+            .contains("Unexpected missing field named `character` in `PlaceObject`")
+    );
+    assert!(
+        err("PlaceObject(character: 1, depth: 1, name: \"a\")")
+            .contains("Unexpected field named `name` in `PlaceObject`")
+    );
+    assert!(
+        err("PlaceObject(character: 1, depth: 1, matrix: (scale: 1))")
+            .contains("Unexpected field named `scale` in `Matrix`")
+    );
+    assert!(
+        err("PlaceObject(character: 1, depth: 1, color_transform: (red: 1))")
+            .contains("Unexpected field named `red` in `ColorTransform`")
+    );
+}
+
+#[test]
+fn place_object_invalid_values() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [{tag}])"));
+    let matrix_err = |matrix: &str| {
+        err(&format!(
+            "PlaceObject(character: 1, depth: 1, matrix: ({matrix}))"
+        ))
+    };
+    assert!(
+        matrix_err("scale_x: 0.1")
+            .contains("matrix: scale_x: 0.1 is not representable as a 16.16 fixed point number")
+    );
+    assert!(matrix_err("scale_y: 16384").contains("matrix: scale_y: 16384 is out of range"));
+    assert!(
+        matrix_err("rotate_skew0: -16384.0000152587890625")
+            .contains("matrix: rotate_skew0: -16384.00001525879 is out of range")
+    );
+    assert!(
+        matrix_err("rotate_skew1: 1e10")
+            .contains("matrix: rotate_skew1: 10000000000 is not representable")
+    );
+    assert!(
+        matrix_err("translate_x: 0.01")
+            .contains("matrix: translate_x: 0.01px is not a whole number of twips")
+    );
+    assert!(
+        matrix_err("translate_y: 53687091.2")
+            .contains("matrix: translate_y: 53687091.2px is out of range")
+    );
+    assert!(
+        err("PlaceObject(character: 1, depth: 1, matrix: (translate_x: -53687091.25))")
+            .contains("matrix: translate_x: -53687091.25px is out of range")
+    );
+
+    let color_err = |color_transform: &str| {
+        err(&format!(
+            "PlaceObject(character: 1, depth: 1, color_transform: ({color_transform}))"
+        ))
+    };
+    assert!(color_err("red_mult: 0.001").contains(
+        "color_transform: red_mult: 0.001 is not representable as an 8.8 fixed point number"
+    ));
+    assert!(
+        color_err("green_mult: 64").contains("color_transform: green_mult: 64 is out of range")
+    );
+    assert!(
+        color_err("blue_add: 16384").contains("color_transform: blue_add: 16384 is out of range")
+    );
+    assert!(color_err("red_add: 32768").contains("Integer is out of bounds"));
 }
 
 #[test]
