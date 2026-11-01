@@ -1,0 +1,57 @@
+// AVM1 bytecode compiled by Rascal from ActionScript 2.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+        DoAction(Rascal(r#"trace("hello from ActionScript");"#)),
+
+        // The same, with the script written as a field.
+        DoAction(Rascal(source: r#"
+            var greeting = "hello";
+            trace(greeting + " from a field");
+        "#)),
+
+        // Paths of files, including the ones included with `#include`, are
+        // relative to the directory of the source file.
+        DoAction(Rascal(file: "rascal.as")),
+        DoAction(Rascal(r#"#include "rascal.as""#)),
+
+        // Scripts can be compiled for another SWF version than the one of the
+        // file, e.g. functions are defined with DefineFunction instead of
+        // DefineFunction2 before SWF 7.
+        DoAction(Rascal(
+            source: r#"
+                function greet(name) {
+                    trace("hello from " + name);
+                }
+                greet("SWF 6");
+            "#,
+            swf_version: 6,
+        )),
+
+        // Optimizations can be turned off, so that the bytecode follows the
+        // script: `1 + 2` is added at run time instead of compile time, and
+        // `count` is stored by name instead of in a register.
+        DoAction(Rascal(
+            source: r#"
+                function count() {
+                    var count = 1 + 2;
+                    trace("counted to " + count);
+                }
+                count();
+            "#,
+            fold_constants: false,
+            promote_variables_to_registers: false,
+        )),
+
+        // Pcode, a textual form of AVM1 actions, is written in ActionScript.
+        DoAction(Rascal(r#"
+            @PCode {
+                Push "hello from pcode"
+                Trace
+            }
+        "#)),
+        ShowFrame,
+        End,
+    ],
+)
