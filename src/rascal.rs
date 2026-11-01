@@ -13,7 +13,8 @@ use std::io;
 /// The path of an inline script in Rascal, which appears in its errors.
 const INLINE_PATH: &str = "<inline>";
 
-/// Compiles a script into AVM1 bytecode for the given SWF version.
+/// Compiles a script into AVM1 bytecode for the SWF version of the script, or
+/// the given one if it has none.
 ///
 /// Files that the script includes, and the script itself if it is a file, are
 /// read from `files`.
@@ -26,6 +27,7 @@ pub(crate) fn compile(
         RascalSource::Inline(source) => (INLINE_PATH, Some(source.as_str())),
         RascalSource::File(path) => (path.as_str(), None),
     };
+    let swf_version = script.swf_version.unwrap_or(swf_version);
     let mut builder = ProgramBuilder::new(Sources { inline, files })
         .with_compile_options(CompileOptions::default().with_swf_version(swf_version));
     builder.add_script(path);

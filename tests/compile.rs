@@ -638,32 +638,58 @@ fn rascal_syntax() {
             tag => panic!("unexpected tag {tag:?}"),
         }
     };
-    let rascal = |source| Ok(Data::Rascal(Rascal { source }));
-    let inline = |text: &str| rascal(RascalSource::Inline(text.to_owned()));
+    let rascal = |script| Ok(Data::Rascal(script));
+    let inline = |text: &str| Rascal {
+        source: RascalSource::Inline(text.to_owned()),
+        swf_version: None,
+    };
+    let file = |path: &str| Rascal {
+        source: RascalSource::File(path.to_owned()),
+        swf_version: None,
+    };
 
-    assert_eq!(parse(r#"Rascal("trace(1);")"#), inline("trace(1);"));
+    assert_eq!(parse(r#"Rascal("trace(1);")"#), rascal(inline("trace(1);")));
     assert_eq!(
         parse(r##"Rascal(r#"trace("a");"#)"##),
-        inline(r#"trace("a");"#)
+        rascal(inline(r#"trace("a");"#))
     );
-    assert_eq!(parse(r#"Rascal(source: "trace(1);")"#), inline("trace(1);"));
+    assert_eq!(
+        parse(r#"Rascal(source: "trace(1);")"#),
+        rascal(inline("trace(1);"))
+    );
     // The struct can also be written in its own parentheses.
     assert_eq!(
         parse(r#"Rascal((source: "trace(1);"))"#),
-        inline("trace(1);")
+        rascal(inline("trace(1);"))
+    );
+    assert_eq!(parse(r#"Rascal(file: "a.as")"#), rascal(file("a.as")));
+    assert_eq!(
+        parse(r#"Rascal(source: "trace(1);", swf_version: 6)"#),
+        rascal(Rascal {
+            swf_version: Some(6),
+            ..inline("trace(1);")
+        })
     );
     assert_eq!(
-        parse(r#"Rascal(file: "a.as")"#),
-        rascal(RascalSource::File("a.as".to_owned()))
+        parse(r#"Rascal(swf_version: 6, file: "a.as")"#),
+        rascal(Rascal {
+            swf_version: Some(6),
+            ..file("a.as")
+        })
     );
 
     let parse_err = |data| parse(data).unwrap_err();
     assert!(parse_err("Rascal(source: \"a\", file: \"b\")").contains("found both"));
     assert!(parse_err("Rascal(source: None)").contains("expected `source` or `file`"));
+    assert!(parse_err("Rascal(swf_version: 6)").contains("expected `source` or `file`"));
+    assert!(
+        parse_err("Rascal(source: \"\", swf_version: 256)").contains("Integer is out of bounds")
+    );
     assert!(parse_err("Rascal(1)").contains("Expected a script or a struct"));
     assert!(parse_err("Rascal()").contains("Expected a script or a struct"));
     assert!(parse_err("Rascal(script: \"a\")").contains(
-        "Unexpected field named `script` in `Rascal`, expected either `source` or `file`"
+        "Unexpected field named `script` in `Rascal`, expected one of `source`, `file`, or \
+        `swf_version`"
     ));
 }
 
@@ -741,19 +767,28 @@ mod rascal {
     fn swf_version() {
         // Functions are defined with DefineFunction2 (0x8E) from SWF 7, and with
         // DefineFunction (0x9B) before.
-        let compile = |version| {
+        let compile = |version, options| {
             swfasm::compile_str(
                 &format!(
                     r#"Swf(version: {version}, tags: [
-                        DoAction(Rascal("function f(a) {{ trace(a); }}")),
+                        DoAction(Rascal(source: "function f(a) {{ trace(a); }}"{options})),
                     ])"#
                 ),
                 &NoFiles,
             )
             .unwrap()
         };
-        assert!(compile(6).contains(&0x9B) && !compile(6).contains(&0x8E));
-        assert!(compile(7).contains(&0x8E) && !compile(7).contains(&0x9B));
+        let swf6 = compile(6, "");
+        let swf7 = compile(7, "");
+        assert!(swf6.contains(&0x9B) && !swf6.contains(&0x8E));
+        assert!(swf7.contains(&0x8E) && !swf7.contains(&0x9B));
+        // The version can be overridden, which changes only the bytecode.
+        let swf6_as_7 = compile(6, ", swf_version: 7");
+        let swf7_as_6 = compile(7, ", swf_version: 6");
+        assert!(swf6_as_7.contains(&0x8E) && !swf6_as_7.contains(&0x9B));
+        assert!(swf7_as_6.contains(&0x9B) && !swf7_as_6.contains(&0x8E));
+        assert_eq!(swf6_as_7[3], 6);
+        assert_eq!(swf7_as_6[3], 7);
     }
 
     #[test]
