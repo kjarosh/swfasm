@@ -1,23 +1,33 @@
 use swf::{
-    ColorTransform, Compression, Fixed8, Fixed16, Matrix, PlaceObject, PlaceObjectAction,
-    Rectangle, Twips,
+    ClipEventFlag, ColorTransform, Compression, Fixed8, Fixed16, Matrix, PlaceObject,
+    PlaceObjectAction, Rectangle, SwfStr, Twips,
 };
 use swfasm::files::{FileProvider, NoFiles};
-use swfasm::source::{Data, Rascal, RascalSource, Tag};
+use swfasm::source::{ClipEvent, Data, Rascal, RascalSource, Tag};
 
 // These are macros instead of functions, so that failures point to the test.
 
 /// Compiles the given tags and returns the serialized tag stream.
 ///
 /// Files are read from the given provider, or are not available without one.
+/// The SWF version is 10 unless given.
 macro_rules! compile_tags {
     ($tags:expr) => {
         compile_tags!($tags, &NoFiles)
     };
-    ($tags:expr, $files:expr) => {{
+    ($tags:expr, version: $version:expr) => {
+        compile_tags!($tags, &NoFiles, version: $version)
+    };
+    ($tags:expr, $files:expr) => {
+        compile_tags!($tags, $files, version: 10)
+    };
+    ($tags:expr, $files:expr, version: $version:expr) => {{
         let compile = |tags: &str| {
             swfasm::compile_str(
-                &format!("Swf(version: 10, num_frames: 0, tags: [{tags}])"),
+                &format!(
+                    "Swf(version: {}, num_frames: 0, tags: [{tags}])",
+                    $version
+                ),
                 $files,
             )
         };
@@ -735,6 +745,389 @@ fn place_object_invalid_values() {
         color_err("blue_add: 16384").contains("color_transform: blue_add: 16384 is out of range")
     );
     assert!(color_err("red_add: 32768").contains("Integer is out of bounds"));
+}
+
+#[test]
+fn place_object_2() {
+    // The body is the flags, the depth, and the fields that are set.
+    assert_eq!(
+        compile_tags!("PlaceObject2(depth: 0x1234, character: 0x5678)"),
+        [0x85, 0x06, 0x02, 0x34, 0x12, 0x78, 0x56]
+    );
+    assert_eq!(
+        compile_tags!("PlaceObject2(depth: 0x1234, move: true)"),
+        [0x83, 0x06, 0x01, 0x34, 0x12]
+    );
+    assert_eq!(
+        compile_tags!("PlaceObject2(depth: 0x1234, move: true, character: 0x5678)"),
+        [0x85, 0x06, 0x03, 0x34, 0x12, 0x78, 0x56]
+    );
+    // Neither a character nor the move flag is written as is.
+    assert_eq!(
+        compile_tags!("PlaceObject2(depth: 0x1234)"),
+        [0x83, 0x06, 0x00, 0x34, 0x12]
+    );
+    assert_eq!(
+        compile_tags!(
+            r#"PlaceObject2(
+                depth: 1,
+                move: true,
+                character: 2,
+                matrix: (),
+                color_transform: (),
+                ratio: 0x0304,
+                name: "ab",
+                clip_depth: 5,
+                clip_actions: [],
+            )"#
+        ),
+        [
+            0x98, 0x06, 0xFF, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04, 0x03, 0x61, 0x62, 0x00,
+            0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"PlaceObject2(depth: 1, name: "żółw")"#),
+        [
+            0x8B, 0x06, 0x20, 0x01, 0x00, 0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00
+        ]
+    );
+
+    assert_eq!(
+        *read_place_object!(
+            r#"PlaceObject2(
+                depth: 1,
+                move: true,
+                character: 2,
+                matrix: (translate_x: 1),
+                color_transform: (alpha_mult: 0.5),
+                ratio: 3,
+                name: "instance",
+                clip_depth: 4,
+            )"#
+        ),
+        PlaceObject {
+            matrix: Some(Matrix::translate(Twips::new(20), Twips::ZERO)),
+            color_transform: Some(ColorTransform {
+                a_multiply: Fixed8::from_f64(0.5),
+                ..Default::default()
+            }),
+            ratio: Some(3),
+            name: Some(SwfStr::from_utf8_str("instance")),
+            clip_depth: Some(4),
+            ..bare_place_object(2, PlaceObjectAction::Replace(2), 1)
+        }
+    );
+}
+
+#[test]
+fn place_object_2_color_transform() {
+    // Unlike in PlaceObject, the color transform has alpha terms.
+    assert_eq!(
+        compile_tags!("PlaceObject2(depth: 1, color_transform: (alpha_mult: 0.5))"),
+        [
+            0x89, 0x06, 0x08, 0x01, 0x00, 0x69, 0x00, 0x40, 0x10, 0x02, 0x00
+        ]
+    );
+    assert_eq!(
+        compile_tags!("PlaceObject2(depth: 1, color_transform: (red_mult: 0.5, blue_add: -1))"),
+        [
+            0x8E, 0x06, 0x08, 0x01, 0x00, 0xE8, 0x80, 0x40, 0x10, 0x04, 0x00, 0x00, 0x00, 0x3F,
+            0xF0, 0x00
+        ]
+    );
+
+    // The extremes of the ranges, which use all 15 bits.
+    assert_eq!(
+        *read_place_object!(
+            "PlaceObject2(depth: 1, character: 2, color_transform: (
+                red_mult: -64,
+                green_mult: 63.99609375,
+                blue_mult: 0,
+                alpha_mult: -0.00390625,
+                red_add: 16383,
+                green_add: -16384,
+                blue_add: 1,
+                alpha_add: -1,
+            ))"
+        ),
+        PlaceObject {
+            color_transform: Some(ColorTransform {
+                r_multiply: Fixed8::from_bits(-1 << 14),
+                g_multiply: Fixed8::from_bits((1 << 14) - 1),
+                b_multiply: Fixed8::ZERO,
+                a_multiply: Fixed8::from_bits(-1),
+                r_add: (1 << 14) - 1,
+                g_add: -1 << 14,
+                b_add: 1,
+                a_add: -1,
+            }),
+            ..bare_place_object(2, PlaceObjectAction::Place(2), 1)
+        }
+    );
+}
+
+#[test]
+fn place_object_2_clip_actions() {
+    let tag = r#"PlaceObject2(depth: 1, clip_actions: [
+        (events: [Load, EnterFrame], actions: InlineBytes("00")),
+        (events: [KeyPress, Data], key_code: 0x41, actions: InlineBytes("07 00")),
+    ])"#;
+    // Since SWF 6, event flags have 32 bits.
+    assert_eq!(
+        compile_tags!(tag),
+        [
+            0xA1, 0x06, 0x80, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x03, 0x01, 0x02, 0x00, // all events
+            0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // Load, EnterFrame, size
+            0x00, // actions
+            0x00, 0x01, 0x02, 0x00, 0x03, 0x00, 0x00, 0x00, // KeyPress, Data, size
+            0x41, 0x07, 0x00, // key code, actions
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+    // Before SWF 6, event flags have 16 bits.
+    assert_eq!(
+        compile_tags!(
+            r#"PlaceObject2(depth: 1, clip_actions: [
+                (events: [KeyUp, Data], actions: InlineBytes("00")),
+            ])"#,
+            version: 5
+        ),
+        [
+            0x90, 0x06, 0x80, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x80, 0x01, // all events
+            0x80, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, // KeyUp, Data
+            0x00, 0x00, // end
+        ]
+    );
+    // Actions are written as is, and clip actions can be empty.
+    assert_eq!(
+        compile_tags!(
+            r#"PlaceObject2(depth: 1, clip_actions: [(events: [], actions: InlineBytes(""))])"#
+        ),
+        [
+            0x95, 0x06, 0x80, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x00, 0x00, 0x00, 0x00, // all events
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // no events
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+    // The key code is written when it is set, even if it doesn't match the
+    // KeyPress event.
+    assert_eq!(
+        compile_tags!(
+            r#"PlaceObject2(depth: 1, clip_actions: [(events: [KeyPress], actions: InlineBytes("00"))])"#
+        ),
+        [
+            0x96, 0x06, 0x80, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x00, 0x00, 0x02, 0x00, // all events
+            0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, // KeyPress, size
+            0x00, // actions
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+    assert_eq!(
+        compile_tags!(
+            r#"PlaceObject2(depth: 1, clip_actions: [(events: [Load], key_code: 0x41, actions: InlineBytes("00"))])"#
+        ),
+        [
+            0x97, 0x06, 0x80, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x01, 0x00, 0x00, 0x00, // all events
+            0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, // Load, size
+            0x41, // key code
+            0x00, // actions
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+}
+
+#[test]
+fn clip_event_flags() {
+    for (event, flag) in [
+        (ClipEvent::Load, ClipEventFlag::LOAD),
+        (ClipEvent::EnterFrame, ClipEventFlag::ENTER_FRAME),
+        (ClipEvent::Unload, ClipEventFlag::UNLOAD),
+        (ClipEvent::MouseMove, ClipEventFlag::MOUSE_MOVE),
+        (ClipEvent::MouseDown, ClipEventFlag::MOUSE_DOWN),
+        (ClipEvent::MouseUp, ClipEventFlag::MOUSE_UP),
+        (ClipEvent::KeyDown, ClipEventFlag::KEY_DOWN),
+        (ClipEvent::KeyUp, ClipEventFlag::KEY_UP),
+        (ClipEvent::Data, ClipEventFlag::DATA),
+        (ClipEvent::Initialize, ClipEventFlag::INITIALIZE),
+        (ClipEvent::Press, ClipEventFlag::PRESS),
+        (ClipEvent::Release, ClipEventFlag::RELEASE),
+        (ClipEvent::ReleaseOutside, ClipEventFlag::RELEASE_OUTSIDE),
+        (ClipEvent::RollOver, ClipEventFlag::ROLL_OVER),
+        (ClipEvent::RollOut, ClipEventFlag::ROLL_OUT),
+        (ClipEvent::DragOver, ClipEventFlag::DRAG_OVER),
+        (ClipEvent::DragOut, ClipEventFlag::DRAG_OUT),
+        (ClipEvent::KeyPress, ClipEventFlag::KEY_PRESS),
+        (ClipEvent::Construct, ClipEventFlag::CONSTRUCT),
+    ] {
+        assert_eq!(event as u32, flag.bits(), "{event:?}");
+    }
+}
+
+#[test]
+fn all_clip_events() {
+    // The events of all the clip actions can be overridden.
+    let clip_actions = r#"clip_actions: [(events: [Load], actions: InlineBytes("00"))]"#;
+    assert_eq!(
+        compile_tags!(format!(
+            "PlaceObject2(depth: 1, move: true, all_clip_events: [Load, Press], {clip_actions})"
+        )),
+        [
+            0x96, 0x06, 0x81, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x01, 0x04, 0x00, 0x00, // all events
+            0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // Load, size
+            0x00, // actions
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+    assert_eq!(
+        compile_tags!(format!(
+            "PlaceObject2(depth: 1, move: true, all_clip_events: [], {clip_actions})"
+        )),
+        [
+            0x96, 0x06, 0x81, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x00, 0x00, 0x00, 0x00, // all events
+            0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // Load, size
+            0x00, // actions
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+    // Without clip actions, the tag has clip actions with no event handlers.
+    assert_eq!(
+        compile_tags!("PlaceObject2(depth: 1, move: true, all_clip_events: [Load])"),
+        [
+            0x8D, 0x06, 0x81, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x01, 0x00, 0x00, 0x00, // all events
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+    // Before SWF 6, event flags have 16 bits.
+    assert_eq!(
+        compile_tags!(
+            format!("PlaceObject2(depth: 1, move: true, all_clip_events: [Data], {clip_actions})"),
+            version: 5
+        ),
+        [
+            0x90, 0x06, 0x81, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x00, 0x01, // all events
+            0x01, 0x00, 0x01, 0x00, 0x00, 0x00, // Load, size
+            0x00, // actions
+            0x00, 0x00, // end
+        ]
+    );
+
+    let err =
+        |tag: &str, version: u8| compile_err!(format!("Swf(version: {version}, tags: [{tag}])"));
+    assert!(
+        err(
+            &format!("PlaceObject2(depth: 1, all_clip_events: [KeyPress], {clip_actions})"),
+            5
+        )
+        .contains("tag #0: all_clip_events: KeyPress events are not supported before SWF 6")
+    );
+    assert!(
+        err("PlaceObject2(depth: 1, all_clip_events: [Click])", 10)
+            .contains("Unexpected variant named `Click` in enum `ClipEvent`")
+    );
+}
+
+#[test]
+fn place_object_2_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
+    assert!(
+        err("PlaceObject2(character: 1)")
+            .contains("Unexpected missing field named `depth` in `PlaceObject2`")
+    );
+    assert!(
+        err(r#"PlaceObject2(depth: 1, name: "a\0b")"#)
+            .contains(r#"tag #1: name: "a\0b" contains a null character"#)
+    );
+    // Unlike in PlaceObject, alpha terms are checked like the others.
+    assert!(
+        err("PlaceObject2(depth: 1, color_transform: (alpha_mult: -64.00390625))")
+            .contains("tag #1: color_transform: alpha_mult: -64.00390625 is out of range")
+    );
+    assert!(
+        err("PlaceObject2(depth: 1, color_transform: (alpha_add: -16385))")
+            .contains("tag #1: color_transform: alpha_add: -16385 is out of range")
+    );
+}
+
+#[test]
+fn clip_action_errors() {
+    let err = |clip_actions: &str, version: u8| {
+        compile_err!(format!(
+            "Swf(version: {version}, tags: [PlaceObject2(depth: 1, clip_actions: {clip_actions})])"
+        ))
+    };
+    for event in ["DragOut", "KeyPress", "Construct"] {
+        assert!(
+            err(
+                &format!(r#"[(events: [{event}], key_code: 1, actions: InlineBytes(""))]"#),
+                5
+            )
+            .contains(&format!(
+                "clip action #0: {event} events are not supported before SWF 6"
+            ))
+        );
+    }
+    assert!(
+        err(r#"[(events: [Load])]"#, 10)
+            .contains("Unexpected missing field named `actions` in `ClipAction`")
+    );
+    assert!(
+        err(r#"[(events: [Click], actions: InlineBytes(""))]"#, 10)
+            .contains("Unexpected variant named `Click` in enum `ClipEvent`")
+    );
+}
+
+#[test]
+fn clip_actions_from_files() {
+    // The actions are binary data, which can be read from files.
+    assert_eq!(
+        compile_tags!(
+            r#"PlaceObject2(
+                depth: 1,
+                move: true,
+                clip_actions: [(events: [Load], actions: File("ab"))],
+            )"#,
+            &PathAsContents
+        ),
+        [
+            0x97, 0x06, 0x81, 0x01, 0x00, // header, flags, depth
+            0x00, 0x00, // reserved
+            0x01, 0x00, 0x00, 0x00, // all events
+            0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, // Load, size
+            b'a', b'b', // actions
+            0x00, 0x00, 0x00, 0x00, // end
+        ]
+    );
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [PlaceObject2(depth: 1, clip_actions: [
+                (events: [Load], actions: InlineBytes("")),
+                (events: [Load], actions: File("x")),
+            ])])"#,
+            &Failing
+        )
+        .contains(
+            r#"tag #0: clip_actions: clip action #1: failed to read file "x": no file named x"#
+        )
+    );
 }
 
 #[test]

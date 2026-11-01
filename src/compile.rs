@@ -5,6 +5,7 @@ mod place_object;
 use crate::files::FileProvider;
 use crate::source::{Data, Swf, Tag};
 use anyhow::{Context, Result, bail};
+use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
 use swf::{
@@ -169,10 +170,16 @@ fn write_tag(
     // The data of the tag, if it has any, declared here so that `swf_tag` can
     // borrow it.
     let data;
+    let mut place_object_data;
     let swf_tag = match tag {
         Tag::ShowFrame => swf::Tag::ShowFrame,
         Tag::End => swf::Tag::End,
-        Tag::PlaceObject { .. } => swf::Tag::PlaceObject(Box::new(place_object::convert(tag)?)),
+        Tag::PlaceObject { .. } | Tag::PlaceObject2 { .. } => {
+            place_object_data = PlaceObjectData::default();
+            let place_object =
+                place_object::convert(tag, swf_version, files, &mut place_object_data)?;
+            swf::Tag::PlaceObject(Box::new(place_object))
+        }
         Tag::FileAttributes {
             action_script_3,
             use_network,
