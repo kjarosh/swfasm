@@ -1,0 +1,24 @@
+// Characters exported under names, and attached by name with ActionScript.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+        DefineSprite(id: 1, tags: [ShowFrame, End]),
+        DefineSprite(id: 2, tags: [ShowFrame, End]),
+
+        ExportAssets([
+            (character: 1, name: "clip"),
+            (character: 2, name: "żółw"),
+            (character: 1, name: "alias"),
+        ]),
+
+        DoAction(Rascal(r#"
+            attachMovie("clip", "first", 1);
+            attachMovie("żółw", "second", 2);
+            attachMovie("alias", "third", 3);
+        "#)),
+
+        ShowFrame,
+        End,
+    ],
+)
