@@ -107,6 +107,9 @@ pub enum Tag {
     /// Displays the current frame and starts the next one (code 1).
     ShowFrame,
 
+    /// Defines a shape (code 2).
+    DefineShape(Shape),
+
     /// Places a character on the display list (code 4).
     PlaceObject {
         /// The ID of the character to place.
@@ -386,6 +389,303 @@ impl Tag {
             _ => false,
         }
     }
+}
+
+/// A shape, in `DefineShape`.
+///
+/// ```ron
+/// DefineShape(
+///     id: 1,
+///     bounds: (x_min: 9, x_max: 111, y_min: 9, y_max: 111),
+///     fill_styles: [Solid(0xFF0000)],
+///     line_styles: [(width: 2, color: 0x000000)],
+///     records: [
+///         StyleChange(move_to: (x: 10, y: 10), fill_style_1: 1, line_style: 1),
+///         StraightEdge(dx: 100),
+///         StraightEdge(dy: 100),
+///         StraightEdge(dx: -100),
+///         StraightEdge(dy: -100),
+///     ],
+/// )
+/// ```
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Shape {
+    /// The character ID.
+    pub id: u16,
+
+    /// The bounds of the shape (`ShapeBounds`).
+    pub bounds: Rectangle,
+
+    /// The fill styles.
+    ///
+    /// There can be at most 254 of them: the swf crate writes 255 and more
+    /// with an extended count, which `DefineShape` doesn't have. More are an
+    /// error.
+    #[serde(default)]
+    pub fill_styles: Vec<FillStyle>,
+
+    /// The line styles.
+    ///
+    /// There can be at most 65535 of them. More are an error.
+    #[serde(default)]
+    pub line_styles: Vec<LineStyle>,
+
+    /// The shape records.
+    ///
+    /// They are followed by the end record, which is appended automatically.
+    #[serde(default)]
+    pub records: Vec<ShapeRecord>,
+}
+
+/// A rectangle (`RECT`), in pixels.
+///
+/// Values are stored in twips (1/20 of a pixel) as 31-bit signed numbers, so
+/// they must be multiples of 0.05 between -53687091.2 and 53687091.15. Values
+/// that are not representable are an error.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rectangle {
+    /// `Xmin`.
+    pub x_min: f64,
+
+    /// `Xmax`.
+    pub x_max: f64,
+
+    /// `Ymin`.
+    pub y_min: f64,
+
+    /// `Ymax`.
+    pub y_max: f64,
+}
+
+/// A fill style (`FILLSTYLE`).
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum FillStyle {
+    /// A solid fill (type 0x00), in the `0xRRGGBB` format.
+    ///
+    /// The color must be at most `0xFFFFFF`. Larger values are an error.
+    Solid(u32),
+
+    /// A linear gradient fill (type 0x10).
+    LinearGradient(Gradient),
+
+    /// A radial gradient fill (type 0x12).
+    RadialGradient(Gradient),
+
+    /// A focal radial gradient fill (type 0x13).
+    FocalGradient {
+        /// The gradient.
+        gradient: Gradient,
+
+        /// `FocalPoint`.
+        ///
+        /// It is stored as an 8.8 fixed point number, so it must be a multiple
+        /// of 1/256 between -128 and 127.99609375. Values that are not
+        /// representable are an error.
+        focal_point: f64,
+    },
+
+    /// A bitmap fill (types 0x40 to 0x43).
+    Bitmap {
+        /// The ID of the bitmap character (`BitmapId`).
+        character: u16,
+
+        /// `BitmapMatrix`.
+        ///
+        /// Defaults to the identity matrix.
+        #[serde(default)]
+        matrix: Matrix,
+
+        /// Whether the type is 0x40 or 0x42 (true), or 0x41 or 0x43 (false).
+        ///
+        /// Defaults to true.
+        #[serde(default = "default_true")]
+        repeating: bool,
+
+        /// Whether the type is 0x40 or 0x41 (true), or 0x42 or 0x43 (false).
+        ///
+        /// False is an error before SWF 8, as the swf crate writes 0x40 and
+        /// 0x41 instead.
+        ///
+        /// Defaults to true.
+        #[serde(default = "default_true")]
+        smoothed: bool,
+    },
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// A gradient (`GRADIENT`).
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Gradient {
+    /// `GradientMatrix`.
+    ///
+    /// Defaults to the identity matrix.
+    #[serde(default)]
+    pub matrix: Matrix,
+
+    /// `SpreadMode`.
+    ///
+    /// Defaults to `Pad`.
+    #[serde(default)]
+    pub spread: GradientSpread,
+
+    /// `InterpolationMode`.
+    ///
+    /// Defaults to `Rgb`.
+    #[serde(default)]
+    pub interpolation: GradientInterpolation,
+
+    /// The gradient records.
+    ///
+    /// Their count is stored in 4 bits, so there can be at most 15 of them.
+    /// More are an error.
+    pub records: Vec<GradientRecord>,
+}
+
+/// A `SpreadMode` of a gradient, with its value.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Deserialize)]
+pub enum GradientSpread {
+    #[default]
+    Pad = 0,
+    Reflect = 1,
+    Repeat = 2,
+}
+
+/// An `InterpolationMode` of a gradient, with its value.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Deserialize)]
+pub enum GradientInterpolation {
+    #[default]
+    Rgb = 0,
+    LinearRgb = 1,
+}
+
+/// A gradient record (`GRADRECORD`).
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GradientRecord {
+    /// `Ratio`.
+    pub ratio: u8,
+
+    /// The color, in the `0xRRGGBB` format.
+    ///
+    /// It must be at most `0xFFFFFF`. Larger values are an error.
+    pub color: u32,
+}
+
+/// A line style (`LINESTYLE`).
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LineStyle {
+    /// The width, in pixels.
+    ///
+    /// It is stored in twips as a 16-bit unsigned number, so it must be a
+    /// multiple of 0.05 between 0 and 3276.75. Values that are not
+    /// representable are an error.
+    pub width: f64,
+
+    /// The color, in the `0xRRGGBB` format.
+    ///
+    /// It must be at most `0xFFFFFF`. Larger values are an error.
+    pub color: u32,
+}
+
+/// A shape record (`SHAPERECORD`).
+///
+/// The deltas of edges are in pixels, stored in twips in at most 17 bits, so
+/// they must be multiples of 0.05 between -3276.8 and 3276.75. Values that are
+/// not representable are an error.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ShapeRecord {
+    /// A style change record (`STYLECHANGERECORD`).
+    ///
+    /// Only the fields that are set are written, along with the flags saying
+    /// that they are present.
+    ///
+    /// Style indices are stored in as many bits as needed for the number of
+    /// styles, so they must fit in them: e.g. with 2 fill styles, fill style
+    /// indices are stored in 2 bits, so they must be at most 3. Larger ones are
+    /// an error.
+    StyleChange {
+        /// `MoveDeltaX` and `MoveDeltaY`.
+        ///
+        /// Values are stored in twips in at most 31 bits, so they must be
+        /// multiples of 0.05 between -53687091.2 and 53687091.15. Values that
+        /// are not representable are an error.
+        #[serde(default)]
+        move_to: Option<Point>,
+
+        /// `FillStyle0`.
+        #[serde(default)]
+        fill_style_0: Option<u16>,
+
+        /// `FillStyle1`.
+        #[serde(default)]
+        fill_style_1: Option<u16>,
+
+        /// `LineStyle`.
+        #[serde(default)]
+        line_style: Option<u16>,
+    },
+
+    /// A straight edge record (`STRAIGHTEDGERECORD`).
+    ///
+    /// The swf crate writes it without the `GeneralLineFlag` when one of the
+    /// deltas is 0.
+    StraightEdge {
+        /// `DeltaX`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        dx: f64,
+
+        /// `DeltaY`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        dy: f64,
+    },
+
+    /// A curved edge record (`CURVEDEDGERECORD`).
+    CurvedEdge {
+        /// `ControlDeltaX`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        control_dx: f64,
+
+        /// `ControlDeltaY`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        control_dy: f64,
+
+        /// `AnchorDeltaX`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        anchor_dx: f64,
+
+        /// `AnchorDeltaY`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        anchor_dy: f64,
+    },
+}
+
+/// A point, in pixels.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
 }
 
 /// A transformation matrix (`MATRIX`), which transforms a point `(x, y)` into
