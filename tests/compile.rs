@@ -1858,6 +1858,74 @@ fn script_limits_errors() {
 }
 
 #[test]
+fn do_abc() {
+    // The body is the ABC data, written as is.
+    assert_eq!(
+        compile_tags!(r#"DoAbc(InlineBytes("10 00 2e 00"))"#),
+        [
+            0x04, 0x12, // header
+            0x10, 0x00, 0x2E, 0x00, // data
+        ]
+    );
+    // The data is not validated.
+    assert_eq!(
+        compile_tags!(r#"DoAbc(InlineBytes("ff"))"#),
+        [
+            0x01, 0x12, // header
+            0xFF, // data
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"DoAbc(InlineBytes(""))"#),
+        [
+            0x00, 0x12, // header
+        ]
+    );
+    // The longest data that fits in the short header form, and the shortest
+    // that does not.
+    assert_eq!(
+        compile_tags!(&format!(r#"DoAbc(InlineBytes("{}"))"#, "00".repeat(62))),
+        [
+            [0x3E, 0x12].as_slice(), // header
+            &[0; 62],                // data
+        ]
+        .concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(r#"DoAbc(InlineBytes("{}"))"#, "00".repeat(63))),
+        [
+            [0x3F, 0x12, 63, 0x00, 0x00, 0x00].as_slice(), // long header
+            &[0; 63],                                      // data
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn do_abc_from_file() {
+    assert_eq!(
+        compile_tags!(r#"DoAbc(File("ab"))"#, &PathAsContents),
+        [
+            0x02, 0x12, // header
+            b'a', b'b', // data
+        ]
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, DoAbc(File("a.abc"))])"#)
+            .contains(r#"tag #1: failed to read file "a.abc": files are not available"#)
+    );
+}
+
+#[test]
+fn do_abc_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
+    assert!(err(r#"DoAbc("10 00")"#).contains("Expected identifier"));
+    assert!(
+        err(r#"DoAbc(Hex("10 00"))"#).contains("Unexpected variant named `Hex` in enum `Data`")
+    );
+}
+
+#[test]
 fn metadata() {
     assert_eq!(
         compile_tags!(r#"Metadata(InlineBytes("3c 61 2f 3e"))"#),
@@ -1932,6 +2000,123 @@ fn metadata_errors() {
     );
     assert!(err(r#"Metadata("<a/>")"#).contains("Expected identifier"));
     assert!(err("Metadata()").contains("Expected identifier"));
+}
+
+#[test]
+fn do_abc_2() {
+    // The body is the flags, the null-terminated name and the ABC data.
+    assert_eq!(
+        compile_tags!(r#"DoAbc2(name: "ab", data: InlineBytes("10 00"))"#),
+        [
+            0x89, 0x14, // header
+            0x00, 0x00, 0x00, 0x00, // flags
+            b'a', b'b', 0x00, // name
+            0x10, 0x00, // data
+        ]
+    );
+    // The flags default to 0, and the name to an empty one.
+    assert_eq!(
+        compile_tags!(r#"DoAbc2(data: InlineBytes(""))"#),
+        [
+            0x85, 0x14, // header
+            0x00, 0x00, 0x00, 0x00, // flags
+            0x00, // name
+        ]
+    );
+    // The data is not validated.
+    assert_eq!(
+        compile_tags!(r#"DoAbc2(lazy_initialize: true, data: InlineBytes("ff"))"#),
+        [
+            0x86, 0x14, // header
+            0x01, 0x00, 0x00, 0x00, // flags
+            0x00, // name
+            0xFF, // data
+        ]
+    );
+    // Names are written as UTF-8 in all SWF versions.
+    for version in [5, 10] {
+        assert_eq!(
+            compile_tags!(
+                r#"DoAbc2(name: "żółw", data: InlineBytes(""))"#,
+                version: version
+            ),
+            [
+                0x8C, 0x14, // header
+                0x00, 0x00, 0x00, 0x00, // flags
+                0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00, // name
+            ],
+            "version {version}"
+        );
+    }
+}
+
+#[test]
+fn do_abc_2_long() {
+    // The longest body that fits in the short header form, and the shortest
+    // that does not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DoAbc2(name: "a", data: InlineBytes("{}"))"#,
+            "00".repeat(56)
+        )),
+        [
+            [
+                0xBE, 0x14, // header
+                0x00, 0x00, 0x00, 0x00, // flags
+                b'a', 0x00, // name
+            ]
+            .as_slice(),
+            &[0; 56], // data
+        ]
+        .concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DoAbc2(name: "a", data: InlineBytes("{}"))"#,
+            "00".repeat(57)
+        )),
+        [
+            [
+                0xBF, 0x14, 63, 0x00, 0x00, 0x00, // long header
+                0x00, 0x00, 0x00, 0x00, // flags
+                b'a', 0x00, // name
+            ]
+            .as_slice(),
+            &[0; 57], // data
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn do_abc_2_from_file() {
+    assert_eq!(
+        compile_tags!(r#"DoAbc2(name: "n", data: File("ab"))"#, &PathAsContents),
+        [
+            0x88, 0x14, // header
+            0x00, 0x00, 0x00, 0x00, // flags
+            b'n', 0x00, // name
+            b'a', b'b', // data
+        ]
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, DoAbc2(data: File("a.abc"))])"#)
+            .contains(r#"tag #1: failed to read file "a.abc": files are not available"#)
+    );
+}
+
+#[test]
+fn do_abc_2_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
+    assert!(
+        err(r#"DoAbc2(name: "a\0b", data: InlineBytes(""))"#)
+            .contains(r#"tag #1: name: "a\0b" contains a null character"#)
+    );
+    assert!(err("DoAbc2()").contains("Unexpected missing field named `data` in `DoAbc2`"));
+    assert!(
+        err(r#"DoAbc2(flags: 1, data: InlineBytes(""))"#)
+            .contains("Unexpected field named `flags` in `DoAbc2`")
+    );
 }
 
 #[test]
