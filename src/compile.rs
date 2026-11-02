@@ -3,6 +3,7 @@
 mod button;
 mod matrix;
 mod place_object;
+mod shape;
 mod video;
 
 use crate::files::{FileProvider, NoFiles};
@@ -293,6 +294,9 @@ fn write_tag(tag: &Tag, swf_version: u8, compiler: &Compiler, output: &mut Vec<u
     let swf_tag = match tag {
         Tag::ShowFrame => swf::Tag::ShowFrame,
         Tag::End => swf::Tag::End,
+        Tag::DefineShape(shape) => {
+            swf::Tag::DefineShape(Box::new(shape::convert(shape, swf_version)?))
+        }
         Tag::PlaceObject { .. } | Tag::PlaceObject2 { .. } => {
             place_object_data = PlaceObjectData::default();
             let place_object =
