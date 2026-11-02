@@ -167,6 +167,15 @@ fn twips_in_bits(pixels: f64, num_bits: u32) -> Result<Twips> {
     Ok(twips)
 }
 
+/// Converts a color in the `0xRRGGBB` format, failing if it is larger than
+/// `0xFFFFFF`.
+fn rgb(rgb: u32) -> Result<Color> {
+    if rgb > 0xFFFFFF {
+        bail!("{rgb:#x} is not in the 0xRRGGBB format");
+    }
+    Ok(Color::from_rgb(rgb, 255))
+}
+
 /// Fails if `raw`, the encoding of `value`, does not fit in `num_bits` signed
 /// bits.
 fn check_sbits(raw: i32, num_bits: u32, value: impl Display) -> Result<()> {
@@ -238,11 +247,8 @@ fn write_tag(
             data = read_data(metadata, swf_version, files)?;
             swf::Tag::Metadata(null_terminated_bytes(&data)?)
         }
-        Tag::SetBackgroundColor(rgb) => {
-            if *rgb > 0xFFFFFF {
-                bail!("background color {rgb:#x} is not in the 0xRRGGBB format");
-            }
-            swf::Tag::SetBackgroundColor(Color::from_rgb(*rgb, 255))
+        Tag::SetBackgroundColor(color) => {
+            swf::Tag::SetBackgroundColor(rgb(*color).context("background color")?)
         }
         Tag::RemoveObject { character, depth } => swf::Tag::RemoveObject(RemoveObject {
             depth: *depth,

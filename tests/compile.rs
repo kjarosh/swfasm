@@ -409,7 +409,7 @@ fn invalid_values() {
     );
     assert!(
         compile_err!("Swf(version: 10, tags: [SetBackgroundColor(0x1000000)])")
-            .contains("background color 0x1000000 is not in the 0xRRGGBB format")
+            .contains("background color: 0x1000000 is not in the 0xRRGGBB format")
     );
     assert!(
         compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes("0"))])"#)
@@ -515,7 +515,7 @@ fn define_sprite_errors() {
                 DefineSprite(id: 1, tags: [ShowFrame, SetBackgroundColor(0x1000000)]),
             ])"
         )
-        .contains("tag #1: tag #1: background color 0x1000000 is not in the 0xRRGGBB format")
+        .contains("tag #1: tag #1: background color: 0x1000000 is not in the 0xRRGGBB format")
     );
     assert!(
         compile_err!("Swf(version: 10, tags: [DefineSprite(tags: [])])")
