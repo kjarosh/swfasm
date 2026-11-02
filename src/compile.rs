@@ -9,8 +9,8 @@ use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
 use swf::{
-    Color, DefineBinaryData, FileAttributes, Fixed8, Fixed16, Header, Rectangle, RemoveObject,
-    SwfStr, TagCode, Twips,
+    Color, DefineBinaryData, FileAttributes, Fixed8, Fixed16, FrameLabel, Header, Rectangle,
+    RemoveObject, SwfStr, TagCode, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -245,6 +245,17 @@ fn write_tag(
                 output,
             )?;
             return Ok(());
+        }
+        Tag::FrameLabel(frame_label) => {
+            // TODO Maybe add support to the swf crate? It silently drops the
+            // anchor flag before SWF 6, and can only write it as 1.
+            if frame_label.anchor && swf_version < 6 {
+                bail!("anchor: named anchors are not supported before SWF 6");
+            }
+            swf::Tag::FrameLabel(FrameLabel {
+                label: null_terminated_str(&frame_label.label).context("label")?,
+                is_anchor: frame_label.anchor,
+            })
         }
         Tag::DoInitAction { sprite, actions } => {
             data = read_data(actions, swf_version, files)?;

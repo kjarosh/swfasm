@@ -1254,6 +1254,147 @@ fn define_binary_data_errors() {
 }
 
 #[test]
+fn frame_label() {
+    // The body is the null-terminated label.
+    assert_eq!(
+        compile_tags!(r#"FrameLabel("start")"#),
+        [
+            0xC6, 0x0A, // header
+            0x73, 0x74, 0x61, 0x72, 0x74, 0x00, // label
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "start")"#),
+        [
+            0xC6, 0x0A, // header
+            0x73, 0x74, 0x61, 0x72, 0x74, 0x00, // label
+        ]
+    );
+    // The anchor flag is a byte of 1 after the label.
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "start", anchor: true)"#),
+        [
+            0xC7, 0x0A, // header
+            0x73, 0x74, 0x61, 0x72, 0x74, 0x00, // label
+            0x01, // anchor flag
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "start", anchor: false)"#),
+        [
+            0xC6, 0x0A, // header
+            0x73, 0x74, 0x61, 0x72, 0x74, 0x00, // label
+        ]
+    );
+    // The anchor flag is written from SWF 6.
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "a", anchor: true)"#, version: 6),
+        [
+            0xC3, 0x0A, // header
+            0x61, 0x00, // label
+            0x01, // anchor flag
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "a")"#, version: 5),
+        [
+            0xC2, 0x0A, // header
+            0x61, 0x00, // label
+        ]
+    );
+    // The label is written as UTF-8 in all versions.
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "żółw")"#, version: 5),
+        [
+            0xC8, 0x0A, // header
+            0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00, // label
+        ]
+    );
+    // Labels can be empty.
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "")"#),
+        [
+            0xC1, 0x0A, // header
+            0x00, // label
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"FrameLabel(label: "", anchor: true)"#),
+        [
+            0xC2, 0x0A, // header
+            0x00, // label
+            0x01, // anchor flag
+        ]
+    );
+    // The anchor flag counts towards the length of the body, which takes the
+    // long header form from 63 bytes.
+    let label = "a".repeat(61);
+    assert_eq!(
+        compile_tags!(&format!(r#"FrameLabel(label: "{label}")"#)),
+        [[0xFE, 0x0A].as_slice(), label.as_bytes(), &[0x00]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(r#"FrameLabel(label: "{label}", anchor: true)"#)),
+        [
+            [0xFF, 0x0A, 63, 0x00, 0x00, 0x00].as_slice(),
+            label.as_bytes(),
+            &[0x00, 0x01],
+        ]
+        .concat()
+    );
+    // A frame can have several labels, and labels can repeat.
+    assert_eq!(
+        compile_tags!(
+            r#"
+                FrameLabel(label: "a"),
+                FrameLabel(label: "a"),
+                ShowFrame,
+                FrameLabel(label: "a", anchor: true),
+            "#
+        ),
+        [
+            0xC2, 0x0A, 0x61, 0x00, // FrameLabel
+            0xC2, 0x0A, 0x61, 0x00, // FrameLabel
+            0x40, 0x00, // ShowFrame
+            0xC3, 0x0A, 0x61, 0x00, 0x01, // FrameLabel
+        ]
+    );
+}
+
+#[test]
+fn frame_label_errors() {
+    let err = |tag: &str, version: u8| {
+        compile_err!(format!("Swf(version: {version}, tags: [ShowFrame, {tag}])"))
+    };
+    assert!(
+        err(r#"FrameLabel(label: "a\0b")"#, 10)
+            .contains(r#"tag #1: label: "a\0b" contains a null character"#)
+    );
+    assert!(
+        err(r#"FrameLabel(label: "a", anchor: true)"#, 5)
+            .contains("tag #1: anchor: named anchors are not supported before SWF 6")
+    );
+    // The version of the SWF applies in sprites too.
+    assert!(
+        err(
+            r#"DefineSprite(id: 1, tags: [FrameLabel(label: "a", anchor: true)])"#,
+            5
+        )
+        .contains("tag #1: tag #0: anchor: named anchors are not supported before SWF 6")
+    );
+    assert!(
+        err("FrameLabel(anchor: true)", 10)
+            .contains("Unexpected missing field named `label` in `FrameLabel`")
+    );
+    assert!(
+        err(r#"FrameLabel(label: "a", named_anchor: true)"#, 10)
+            .contains("Unexpected field named `named_anchor` in `FrameLabel`")
+    );
+    assert!(err("FrameLabel(1)", 10).contains("Expected a label or a struct"));
+    assert!(err("FrameLabel()", 10).contains("Expected a label or a struct"));
+}
+
+#[test]
 fn do_init_action() {
     assert_eq!(
         compile_tags!(r#"DoInitAction(sprite: 0x1234, actions: InlineBytes("07 00"))"#),
