@@ -1,5 +1,6 @@
 //! Compiles the textual (RON) representation of a SWF file into a SWF file.
 
+mod matrix;
 mod place_object;
 
 use crate::files::FileProvider;
@@ -8,6 +9,7 @@ use anyhow::{Context, Result, bail};
 use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
+use std::fmt::Display;
 use swf::{
     Color, DefineBinaryData, ExportedAsset, FileAttributes, Fixed8, Fixed16, FrameLabel, Header,
     Rectangle, RemoveObject, SwfStr, TagCode, Twips,
@@ -154,6 +156,16 @@ fn null_terminated_bytes(bytes: &[u8]) -> Result<&SwfStr> {
         bail!("null byte at offset {offset}, which would end the string early");
     }
     Ok(SwfStr::from_bytes(bytes))
+}
+
+/// Fails if `raw`, the encoding of `value`, does not fit in `num_bits` signed
+/// bits.
+fn check_sbits(raw: i32, num_bits: u32, value: impl Display) -> Result<()> {
+    let limit = 1 << (num_bits - 1);
+    if !(-limit..limit).contains(&raw) {
+        bail!("{value} is out of range");
+    }
+    Ok(())
 }
 
 /// Returns the explicit frame count, or else the number of `ShowFrame` tags.
