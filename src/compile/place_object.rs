@@ -2,13 +2,13 @@
 //!
 //! The values are checked here, so that errors point to the invalid field.
 
-use super::{fixed8, fixed16, read_data, twips};
+use super::{fixed8, fixed16, null_terminated_str, read_data, twips};
 use crate::files::FileProvider;
 use crate::source::{ClipAction, ClipEvent, ColorTransform, Matrix, Tag};
 use anyhow::{Context, Result, bail};
 use std::borrow::Cow;
 use std::fmt::Display;
-use swf::{ClipEventFlag, Fixed8, Fixed16, PlaceObject, PlaceObjectAction, SwfStr};
+use swf::{ClipEventFlag, Fixed8, Fixed16, PlaceObject, PlaceObjectAction};
 
 /// Data read for a `PlaceObject` tag, which the converted tag borrows.
 #[derive(Default)]
@@ -108,7 +108,11 @@ pub(super) fn convert<'a>(
                 .transpose()
                 .context("color_transform")?,
             ratio: *ratio,
-            name: name.as_deref().map(swf_str).transpose().context("name")?,
+            name: name
+                .as_deref()
+                .map(null_terminated_str)
+                .transpose()
+                .context("name")?,
             clip_depth: *clip_depth,
             class_name: None,
             filters: None,
@@ -127,15 +131,6 @@ pub(super) fn convert<'a>(
         },
         _ => panic!("not a PlaceObject tag: {tag:?}"),
     })
-}
-
-/// Converts a string to a null-terminated `SwfStr`, failing if it contains a
-/// null character.
-fn swf_str(string: &str) -> Result<&SwfStr> {
-    if string.contains('\0') {
-        bail!("{string:?} contains a null character");
-    }
-    Ok(SwfStr::from_utf8_str(string))
 }
 
 /// Fails if `raw`, the encoding of `value`, does not fit in `num_bits` signed

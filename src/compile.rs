@@ -10,7 +10,7 @@ use ron::extensions::Extensions;
 use std::borrow::Cow;
 use swf::{
     Color, DefineBinaryData, FileAttributes, Fixed8, Fixed16, Header, Rectangle, RemoveObject,
-    TagCode, Twips,
+    SwfStr, TagCode, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -136,6 +136,15 @@ fn fixed16(value: f64) -> Result<Fixed16> {
         bail!("{value} is not representable as a 16.16 fixed point number");
     }
     Ok(fixed)
+}
+
+/// Converts a string to a null-terminated `SwfStr`, failing if it contains a
+/// null character.
+fn null_terminated_str(string: &str) -> Result<&SwfStr> {
+    if string.contains('\0') {
+        bail!("{string:?} contains a null character");
+    }
+    Ok(SwfStr::from_utf8_str(string))
 }
 
 /// Returns the explicit frame count, or else the number of `ShowFrame` tags.
