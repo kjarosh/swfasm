@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use swf::{
     Color, DefineBinaryData, DoAbc2, DoAbc2Flag, ExportedAsset, FileAttributes, Fixed8, Fixed16,
-    FrameLabel, Header, Rectangle, RemoveObject, SwfStr, TagCode, Twips,
+    FrameLabel, Header, Rectangle, RemoveObject, SwfStr, SymbolClassLink, TagCode, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -329,6 +329,25 @@ fn write_tag(
         Tag::DoAbc(abc) => {
             data = read_data(abc, swf_version, files)?;
             swf::Tag::DoAbc(&data)
+        }
+        Tag::SymbolClass(links) => {
+            // TODO Maybe add support to the swf crate? It silently truncates
+            // the count, and can't write a count that doesn't match the links.
+            if u16::try_from(links.len()).is_err() {
+                bail!("too many links: {}, at most 65535", links.len());
+            }
+            let links = links
+                .iter()
+                .enumerate()
+                .map(|(i, link)| {
+                    Ok(SymbolClassLink {
+                        id: link.character,
+                        class_name: null_terminated_str(&link.name)
+                            .with_context(|| format!("link #{i}: name"))?,
+                    })
+                })
+                .collect::<Result<_>>()?;
+            swf::Tag::SymbolClass(links)
         }
         Tag::DoAbc2 {
             lazy_initialize,
