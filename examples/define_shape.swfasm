@@ -1,0 +1,86 @@
+// Shapes with solid and gradient fills, outlines, and curves.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+        SetBackgroundColor(0xFFFFFF),
+
+        // A red square with a black outline.
+        DefineShape(
+            id: 1,
+            bounds: (x_min: -1, x_max: 101, y_min: -1, y_max: 101),
+            fill_styles: [Solid(0xFF0000)],
+            line_styles: [(width: 2, color: 0x000000)], // the width is in pixels
+            records: [
+                StyleChange(move_to: (x: 0, y: 0), fill_style_1: 1, line_style: 1),
+                StraightEdge(dx: 100),                  // deltas are in pixels
+                StraightEdge(dy: 100),
+                StraightEdge(dx: -100),
+                StraightEdge(dy: -100),
+            ],
+        ),
+
+        // A circle with a radial gradient, made of 8 curves.
+        DefineShape(
+            id: 2,
+            bounds: (x_min: -50, x_max: 50, y_min: -50, y_max: 50),
+            fill_styles: [
+                RadialGradient(
+                    matrix: (scale_x: 0.06103515625, scale_y: 0.06103515625),
+                    records: [
+                        (ratio: 0, color: 0xFFFF00),
+                        (ratio: 255, color: 0x008000),
+                    ],
+                ),
+            ],
+            records: [
+                StyleChange(move_to: (x: 50, y: 0), fill_style_1: 1),
+                CurvedEdge(control_dy: 20.7, anchor_dx: -14.65, anchor_dy: 14.65),
+                CurvedEdge(control_dx: -14.65, control_dy: 14.65, anchor_dx: -20.7),
+                CurvedEdge(control_dx: -20.7, anchor_dx: -14.65, anchor_dy: -14.65),
+                CurvedEdge(control_dx: -14.65, control_dy: -14.65, anchor_dy: -20.7),
+                CurvedEdge(control_dy: -20.7, anchor_dx: 14.65, anchor_dy: -14.65),
+                CurvedEdge(control_dx: 14.65, control_dy: -14.65, anchor_dx: 20.7),
+                CurvedEdge(control_dx: 20.7, anchor_dx: 14.65, anchor_dy: 14.65),
+                CurvedEdge(control_dx: 14.65, control_dy: 14.65, anchor_dy: 20.7),
+            ],
+        ),
+
+        // A rectangle with a linear gradient, and a line of width 0 across it.
+        DefineShape(
+            id: 3,
+            bounds: (x_min: 0, x_max: 200, y_min: 0, y_max: 50),
+            fill_styles: [
+                LinearGradient(
+                    matrix: (
+                        scale_x: 0.1220703125,
+                        scale_y: 0.1220703125,
+                        translate_x: 100,
+                        translate_y: 25,
+                    ),
+                    records: [
+                        (ratio: 0, color: 0x0000FF),
+                        (ratio: 128, color: 0xFFFFFF),
+                        (ratio: 255, color: 0xFF00FF),
+                    ],
+                ),
+            ],
+            line_styles: [(width: 0, color: 0x000000)],
+            records: [
+                StyleChange(move_to: (x: 0, y: 0), fill_style_0: 1),
+                StraightEdge(dy: 50),
+                StraightEdge(dx: 200),
+                StraightEdge(dy: -50),
+                StraightEdge(dx: -200),
+                StyleChange(move_to: (x: 0, y: 25), fill_style_0: 0, line_style: 1),
+                StraightEdge(dx: 200),
+            ],
+        ),
+
+        PlaceObject2(depth: 1, character: 1, matrix: (translate_x: 50, translate_y: 50)),
+        PlaceObject2(depth: 2, character: 2, matrix: (translate_x: 300, translate_y: 100)),
+        PlaceObject2(depth: 3, character: 3, matrix: (translate_x: 50, translate_y: 250)),
+        ShowFrame,
+        End,
+    ],
+)
