@@ -159,6 +159,14 @@ fn null_terminated_bytes(bytes: &[u8]) -> Result<&SwfStr> {
     Ok(SwfStr::from_bytes(bytes))
 }
 
+/// Converts pixels to twips, failing if the value is not a whole number of
+/// twips, or does not fit in `num_bits` signed bits.
+fn twips_in_bits(pixels: f64, num_bits: u32) -> Result<Twips> {
+    let twips = twips(pixels)?;
+    check_sbits(twips.get(), num_bits, format!("{pixels}px"))?;
+    Ok(twips)
+}
+
 /// Fails if `raw`, the encoding of `value`, does not fit in `num_bits` signed
 /// bits.
 fn check_sbits(raw: i32, num_bits: u32, value: impl Display) -> Result<()> {
