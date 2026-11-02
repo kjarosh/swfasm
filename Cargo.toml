@@ -26,7 +26,7 @@ anyhow = "1.0"
 rascal = { version = "0.3.6", optional = true }
 ron = "0.12.2"
 serde = { version = "1.0.228", features = ["derive"] }
-swf = { git = "https://github.com/ruffle-rs/ruffle", rev = "a508f6f972ac64a2ef5944b9a79f9868a3f349be" }
+swf = "0.4.0"
 
 [features]
 default = ["rascal"]
