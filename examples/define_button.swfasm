@@ -1,0 +1,61 @@
+// A button with a different rectangle in each of its states, and actions
+// compiled by Rascal.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+
+        // DefineShape, which defines the 100x40 pixel rectangles that make up
+        // the button, in red, green and blue.
+        Raw(code: 2, data: InlineBytes([
+            "01 00",                               // ID
+            "60 00 3e 80 00 19 00",                // bounds
+            "01 00 cc 33 33",                      // fill styles: solid red
+            "00",                                  // line styles: none
+            "10",                                  // fill and line style bit counts
+            "13 d0 fa 1c ac 83 a2 0c 39 67 00 00", // the rectangle
+        ])),
+        Raw(code: 2, data: InlineBytes([
+            "02 00",                               // ID
+            "60 00 3e 80 00 19 00",                // bounds
+            "01 00 33 cc 33",                      // fill styles: solid green
+            "00",                                  // line styles: none
+            "10",                                  // fill and line style bit counts
+            "13 d0 fa 1c ac 83 a2 0c 39 67 00 00", // the rectangle
+        ])),
+        Raw(code: 2, data: InlineBytes([
+            "03 00",                               // ID
+            "60 00 3e 80 00 19 00",                // bounds
+            "01 00 33 33 cc",                      // fill styles: solid blue
+            "00",                                  // line styles: none
+            "10",                                  // fill and line style bit counts
+            "13 d0 fa 1c ac 83 a2 0c 39 67 00 00", // the rectangle
+        ])),
+
+        DefineButton(
+            id: 4,
+            records: [
+                (states: [Up, HitTest], character: 1, depth: 1),
+                (states: [Over], character: 2, depth: 1),
+                (
+                    states: [Down],
+                    character: 3,
+                    depth: 1,
+                    matrix: (
+                        translate_x: 1,        // in pixels
+                        translate_y: 1,
+                    ),
+                ),
+            ],
+            actions: Rascal(r#"trace("clicked");"#),
+        ),
+
+        PlaceObject2(
+            depth: 1,
+            character: 4,                      // places the button on the stage
+            matrix: (translate_x: 225, translate_y: 180),
+        ),
+        ShowFrame,
+        End,
+    ],
+)
