@@ -1926,6 +1926,138 @@ fn do_abc_errors() {
 }
 
 #[test]
+fn symbol_class() {
+    // The body is the count, and the character ID and the null-terminated class
+    // name of each link.
+    assert_eq!(
+        compile_tags!(r#"SymbolClass([(character: 0x1234, name: "ab")])"#),
+        [
+            0x07, 0x13, // header
+            0x01, 0x00, // count
+            0x34, 0x12, b'a', b'b', 0x00, // link #0
+        ]
+    );
+    // Links are written as is, even when they are repeated, the characters are
+    // not defined, or the names are empty.
+    assert_eq!(
+        compile_tags!(
+            r#"SymbolClass([
+                (character: 0, name: "a.B"),
+                (character: 0, name: "a.B"),
+                (character: 0xFFFF, name: ""),
+            ])"#
+        ),
+        [
+            0x11, 0x13, // header
+            0x03, 0x00, // count
+            0x00, 0x00, b'a', b'.', b'B', 0x00, // link #0
+            0x00, 0x00, b'a', b'.', b'B', 0x00, // link #1
+            0xFF, 0xFF, 0x00, // link #2
+        ]
+    );
+    assert_eq!(
+        compile_tags!("SymbolClass([])"),
+        [
+            0x02, 0x13, // header
+            0x00, 0x00, // count
+        ]
+    );
+    // Names are written as UTF-8.
+    assert_eq!(
+        compile_tags!(r#"SymbolClass([(character: 1, name: "żółw")])"#),
+        [
+            0x0C, 0x13, // header
+            0x01, 0x00, // count
+            0x01, 0x00, 0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00, // link #0
+        ]
+    );
+}
+
+#[test]
+fn symbol_class_long() {
+    // The longest name that fits in the short header form, and the shortest
+    // that does not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"SymbolClass([(character: 1, name: "{}")])"#,
+            "a".repeat(57)
+        )),
+        [
+            [
+                0x3E, 0x13, // header
+                0x01, 0x00, // count
+                0x01, 0x00, // link #0: character
+            ]
+            .as_slice(),
+            &[b'a'; 57], // link #0: name
+            &[0x00],
+        ]
+        .concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"SymbolClass([(character: 1, name: "{}")])"#,
+            "a".repeat(58)
+        )),
+        [
+            [
+                0x3F, 0x13, 63, 0x00, 0x00, 0x00, // long header
+                0x01, 0x00, // count
+                0x01, 0x00, // link #0: character
+            ]
+            .as_slice(),
+            &[b'a'; 58], // link #0: name
+            &[0x00],
+        ]
+        .concat()
+    );
+    // The most links that the count can hold.
+    assert_eq!(
+        compile_tags!(&format!(
+            "SymbolClass([{}])",
+            r#"(character: 1, name: ""),"#.repeat(0xFFFF)
+        )),
+        [
+            [
+                0x3F, 0x13, 0xFF, 0xFF, 0x02, 0x00, // long header
+                0xFF, 0xFF, // count
+            ]
+            .as_slice(),
+            &[0x01, 0x00, 0x00].repeat(0xFFFF), // links
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn symbol_class_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
+    assert!(
+        err(r#"SymbolClass([(character: 1, name: "a"), (character: 2, name: "b\0c")])"#)
+            .contains(r#"tag #1: link #1: name: "b\0c" contains a null character"#)
+    );
+    assert!(
+        err(&format!(
+            "SymbolClass([{}])",
+            r#"(character: 1, name: ""),"#.repeat(0x10000)
+        ))
+        .contains("tag #1: too many links: 65536, at most 65535")
+    );
+    assert!(
+        err(r#"SymbolClass([(name: "a")])"#)
+            .contains("Unexpected missing field named `character` in `SymbolClassLink`")
+    );
+    assert!(
+        err("SymbolClass([(character: 1)])")
+            .contains("Unexpected missing field named `name` in `SymbolClassLink`")
+    );
+    assert!(
+        err(r#"SymbolClass([(character: 1, class_name: "a")])"#)
+            .contains("Unexpected field named `class_name` in `SymbolClassLink`")
+    );
+}
+
+#[test]
 fn metadata() {
     assert_eq!(
         compile_tags!(r#"Metadata(InlineBytes("3c 61 2f 3e"))"#),

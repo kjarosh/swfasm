@@ -310,6 +310,19 @@ pub enum Tag {
     /// An ABC file (code 72).
     DoAbc(Data),
 
+    /// Character IDs with the names of classes (code 76).
+    ///
+    /// The count of links is stored in 16 bits, so more than 65535 links are an
+    /// error.
+    ///
+    /// ```ron
+    /// SymbolClass([
+    ///     (character: 0, name: "Main"),
+    ///     (character: 1, name: "com.example.Clip"),
+    /// ]),
+    /// ```
+    SymbolClass(Vec<SymbolClassLink>),
+
     /// Describes the SWF with XML metadata, usually RDF (code 77).
     ///
     /// The metadata is followed by a null terminator, so it must not contain
@@ -644,6 +657,19 @@ pub struct ExportedAsset {
     pub character: u16,
 
     /// The name to export the character under, written as UTF-8.
+    ///
+    /// It must not contain null characters.
+    pub name: String,
+}
+
+/// A character with the name of a class, in `SymbolClass`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SymbolClassLink {
+    /// The ID of the character.
+    pub character: u16,
+
+    /// The name of the class, written as UTF-8.
     ///
     /// It must not contain null characters.
     pub name: String,
