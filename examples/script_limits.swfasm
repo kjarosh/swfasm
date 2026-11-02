@@ -1,0 +1,13 @@
+// The ScriptLimits tag, which overrides the default limits of ActionScript.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+        ScriptLimits(
+            max_recursion_depth: 1000,
+            timeout_seconds: 60,
+        ),
+        ShowFrame,
+        End,
+    ],
+)
