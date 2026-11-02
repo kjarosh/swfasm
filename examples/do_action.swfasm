@@ -1,8 +1,13 @@
-// AVM1 bytecode in a DoAction tag.
+// AVM1 bytecode in DoAction and DoInitAction tags.
 Swf(
     version: 10,
     tags: [
         FileAttributes(),
+        DefineSprite(id: 1, tags: [ShowFrame, End]),
+        DoInitAction(
+            sprite: 1,
+            actions: Rascal(r#"trace("initializing the sprite");"#),
+        ),
         DoAction(InlineBytes([
             "96 07 00 00 68 65 6c 6c 6f 00", // Push "hello"
             "26",                            // Trace
