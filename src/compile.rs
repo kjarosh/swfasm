@@ -9,8 +9,8 @@ use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
 use swf::{
-    Color, DefineBinaryData, FileAttributes, Fixed8, Fixed16, FrameLabel, Header, Rectangle,
-    RemoveObject, SwfStr, TagCode, Twips,
+    Color, DefineBinaryData, ExportedAsset, FileAttributes, Fixed8, Fixed16, FrameLabel, Header,
+    Rectangle, RemoveObject, SwfStr, TagCode, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -256,6 +256,25 @@ fn write_tag(
                 label: null_terminated_str(&frame_label.label).context("label")?,
                 is_anchor: frame_label.anchor,
             })
+        }
+        Tag::ExportAssets(assets) => {
+            // TODO Maybe add support to the swf crate? It silently truncates
+            // the count, and can't write a count that doesn't match the assets.
+            if u16::try_from(assets.len()).is_err() {
+                bail!("too many assets: {}, at most 65535", assets.len());
+            }
+            let assets = assets
+                .iter()
+                .enumerate()
+                .map(|(i, asset)| {
+                    Ok(ExportedAsset {
+                        id: asset.character,
+                        name: null_terminated_str(&asset.name)
+                            .with_context(|| format!("asset #{i}: name"))?,
+                    })
+                })
+                .collect::<Result<_>>()?;
+            swf::Tag::ExportAssets(assets)
         }
         Tag::DoInitAction { sprite, actions } => {
             data = read_data(actions, swf_version, files)?;
