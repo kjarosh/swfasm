@@ -1254,6 +1254,120 @@ fn define_binary_data_errors() {
 }
 
 #[test]
+fn do_init_action() {
+    assert_eq!(
+        compile_tags!(r#"DoInitAction(sprite: 0x1234, actions: InlineBytes("07 00"))"#),
+        [
+            0xC4, 0x0E, // code 59, length 4
+            0x34, 0x12, // sprite
+            0x07, 0x00, // actions
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"DoInitAction(sprite: 1, actions: InlineBytes(""))"#),
+        [0xC2, 0x0E, 0x01, 0x00]
+    );
+    // Bytes are written as is: no End action is appended, and the bytecode is
+    // not validated.
+    assert_eq!(
+        compile_tags!(r#"DoInitAction(sprite: 1, actions: InlineBytes("ff ff"))"#),
+        [0xC4, 0x0E, 0x01, 0x00, 0xFF, 0xFF]
+    );
+    // The sprite doesn't have to be defined, and any ID is written.
+    assert_eq!(
+        compile_tags!(r#"DoInitAction(sprite: 0, actions: InlineBytes("00"))"#),
+        [0xC3, 0x0E, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        compile_tags!(r#"DoInitAction(sprite: 0xFFFF, actions: InlineBytes("00"))"#),
+        [0xC3, 0x0E, 0xFF, 0xFF, 0x00]
+    );
+    // The tag is not rejected in sprites.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineSprite(id: 1, tags: [DoInitAction(sprite: 1, actions: InlineBytes("00"))])"#
+        ),
+        [
+            0xC9, 0x09, // DefineSprite, length 9
+            0x01, 0x00, // id
+            0x00, 0x00, // num_frames
+            0xC3, 0x0E, // DoInitAction, length 3
+            0x01, 0x00, // sprite
+            0x00, // actions
+        ]
+    );
+    // The longest actions that fit in the short header form, and the shortest
+    // that do not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DoInitAction(sprite: 1, actions: InlineBytes("{}"))"#,
+            "00".repeat(60)
+        )),
+        [[0xFE, 0x0E, 0x01, 0x00].as_slice(), &[0; 60]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DoInitAction(sprite: 1, actions: InlineBytes("{}"))"#,
+            "00".repeat(61)
+        )),
+        [
+            [0xFF, 0x0E, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
+            &[0; 61]
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn do_init_action_from_file() {
+    assert_eq!(
+        compile_tags!(
+            r#"DoInitAction(sprite: 1, actions: File("ab"))"#,
+            &PathAsContents
+        ),
+        [0xC4, 0x0E, 0x01, 0x00, b'a', b'b']
+    );
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [ShowFrame, DoInitAction(sprite: 1, actions: File("a.bin"))])"#
+        )
+        .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    );
+}
+
+#[test]
+fn do_init_action_errors() {
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DoInitAction(sprite: 1, actions: "00")])"#)
+            .contains("Expected identifier")
+    );
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [DoInitAction(sprite: 1, actions: InlineBytes("0"))])"#
+        )
+        .contains(r#"hex string "0" has an odd number of digits"#)
+    );
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [DoInitAction(sprite: 0x10000, actions: InlineBytes(""))])"#
+        )
+        .contains("Integer is out of bounds")
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DoInitAction(actions: InlineBytes(""))])"#)
+            .contains("Unexpected missing field named `sprite` in `DoInitAction`")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, tags: [DoInitAction(sprite: 1)])")
+            .contains("Unexpected missing field named `actions` in `DoInitAction`")
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [DoInitAction(id: 1, actions: InlineBytes(""))])"#)
+            .contains("Unexpected field named `id` in `DoInitAction`")
+    );
+}
+
+#[test]
 fn rascal_syntax() {
     let parse = |data: &str| -> Result<Data, String> {
         let swf = swfasm::parse(&format!("Swf(version: 10, tags: [DoAction({data})])"))
@@ -1385,6 +1499,20 @@ mod rascal {
         assert_eq!(
             compile_tags!(r#"DefineBinaryData(id: 1, data: Rascal(""))"#),
             [0xC6, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        // Init actions are the same bytecode as frame actions.
+        assert_eq!(
+            compile_tags!(r##"DoInitAction(sprite: 1, actions: Rascal(r#"trace("hello");"#))"##),
+            [
+                [0xD4, 0x0E].as_slice(),         // code 59, length 20
+                &[0x01, 0x00],                   // sprite
+                &[0x88, 0x08, 0x00, 0x01, 0x00], // ConstantPool with
+                b"hello\0",                      // "hello"
+                &[0x96, 0x02, 0x00, 0x08, 0x00], // Push the constant
+                &[0x26],                         // Trace
+                &[0x00],                         // End
+            ]
+            .concat()
         );
     }
 

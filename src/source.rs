@@ -229,6 +229,18 @@ pub enum Tag {
         tags: Vec<Tag>,
     },
 
+    /// AVM1 actions that initialize a sprite (code 59).
+    DoInitAction {
+        /// The character ID of the sprite.
+        ///
+        /// It is written as is: it doesn't have to refer to a sprite, or to any
+        /// character at all.
+        sprite: u16,
+
+        /// The AVM1 bytecode.
+        actions: Data,
+    },
+
     /// Describes the SWF to the player (code 69).
     ///
     /// All flags default to false.
