@@ -283,6 +283,13 @@ fn write_tag(
                 action_data: &data,
             }
         }
+        Tag::ScriptLimits {
+            max_recursion_depth,
+            timeout_seconds,
+        } => swf::Tag::ScriptLimits {
+            max_recursion_depth: *max_recursion_depth,
+            timeout_in_seconds: *timeout_seconds,
+        },
         Tag::DefineBinaryData {
             id,
             data: binary_data,

@@ -1647,6 +1647,55 @@ fn do_init_action_errors() {
 }
 
 #[test]
+fn script_limits() {
+    assert_eq!(
+        compile_tags!("ScriptLimits(max_recursion_depth: 0x1234, timeout_seconds: 0x5678)"),
+        [
+            0x44, 0x10, // header: code 65, length 4
+            0x34, 0x12, // max recursion depth
+            0x78, 0x56, // timeout seconds
+        ]
+    );
+    // The tag is written in SWFs older than SWF 7, which introduced it.
+    assert_eq!(
+        compile_tags!(
+            "ScriptLimits(max_recursion_depth: 0, timeout_seconds: 65535)",
+            version: 1
+        ),
+        [
+            0x44, 0x10, // header: code 65, length 4
+            0x00, 0x00, // max recursion depth: 0
+            0xFF, 0xFF, // timeout seconds: 65535
+        ]
+    );
+}
+
+#[test]
+fn script_limits_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [{tag}])"));
+    assert!(
+        err("ScriptLimits(max_recursion_depth: 65536, timeout_seconds: 1)")
+            .contains("Integer is out of bounds")
+    );
+    assert!(
+        err("ScriptLimits(max_recursion_depth: 1, timeout_seconds: -1)")
+            .contains("Integer is out of bounds")
+    );
+    assert!(
+        err("ScriptLimits(timeout_seconds: 1)")
+            .contains("Unexpected missing field named `max_recursion_depth` in `ScriptLimits`")
+    );
+    assert!(
+        err("ScriptLimits(max_recursion_depth: 1)")
+            .contains("Unexpected missing field named `timeout_seconds` in `ScriptLimits`")
+    );
+    assert!(
+        err("ScriptLimits(max_recursion_depth: 1, timeout: 1)")
+            .contains("Unexpected field named `timeout` in `ScriptLimits`")
+    );
+}
+
+#[test]
 fn rascal_syntax() {
     let parse = |data: &str| -> Result<Data, String> {
         let swf = swfasm::parse(&format!("Swf(version: 10, tags: [DoAction({data})])"))
