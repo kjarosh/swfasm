@@ -1,5 +1,6 @@
 //! Compiles the textual (RON) representation of a SWF file into a SWF file.
 
+mod button;
 mod matrix;
 mod place_object;
 
@@ -239,6 +240,16 @@ fn write_tag(
             depth: *depth,
             character_id: Some(*character),
         }),
+        Tag::DefineButton {
+            id,
+            records,
+            actions,
+        } => {
+            data = read_data(actions, swf_version, files).context("actions")?;
+            swf::Tag::DefineButton(Box::new(button::convert_define_button(
+                *id, records, &data,
+            )?))
+        }
         Tag::DoAction(action_data) => {
             data = read_data(action_data, swf_version, files)?;
             swf::Tag::DoAction(&data)

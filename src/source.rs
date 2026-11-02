@@ -140,6 +140,20 @@ pub enum Tag {
         depth: u16,
     },
 
+    /// Defines a button (code 7).
+    DefineButton {
+        /// The character ID.
+        id: u16,
+
+        /// The records of the button.
+        ///
+        /// The list is terminated automatically by the end flag (a 0 byte).
+        records: Vec<ButtonRecord>,
+
+        /// The AVM1 bytecode, written as is: no End action is appended.
+        actions: Data,
+    },
+
     /// Sets the background color of the stage (code 9).
     ///
     /// The color is in the `0xRRGGBB` format, so it must be at most
@@ -495,6 +509,42 @@ pub enum ClipEvent {
     DragOut = 1 << 16,
     KeyPress = 1 << 17,
     Construct = 1 << 18,
+}
+
+/// A record of a button (`BUTTONRECORD`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ButtonRecord {
+    /// The states of the record, written as its flags.
+    pub states: Vec<ButtonState>,
+
+    /// The ID of the character.
+    pub character: u16,
+
+    /// The depth.
+    pub depth: u16,
+
+    /// The transformation matrix.
+    ///
+    /// Defaults to the identity matrix. The record always contains a matrix.
+    #[serde(default)]
+    pub matrix: Matrix,
+}
+
+/// A state of a button, with the value of its flag in `BUTTONRECORD`.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub enum ButtonState {
+    /// `ButtonStateUp`.
+    Up = 1 << 0,
+
+    /// `ButtonStateOver`.
+    Over = 1 << 1,
+
+    /// `ButtonStateDown`.
+    Down = 1 << 2,
+
+    /// `ButtonStateHitTest`.
+    HitTest = 1 << 3,
 }
 
 /// The label of a frame, from a `FrameLabel` tag.
