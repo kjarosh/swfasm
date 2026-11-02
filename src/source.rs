@@ -229,6 +229,9 @@ pub enum Tag {
         tags: Vec<Tag>,
     },
 
+    /// Gives the current frame a label (code 43).
+    FrameLabel(FrameLabel),
+
     /// AVM1 actions that initialize a sprite (code 59).
     DoInitAction {
         /// The character ID of the sprite.
@@ -463,6 +466,74 @@ pub enum ClipEvent {
     DragOut = 1 << 16,
     KeyPress = 1 << 17,
     Construct = 1 << 18,
+}
+
+/// The label of a frame, from a `FrameLabel` tag.
+///
+/// ```ron
+/// // The label itself.
+/// FrameLabel("start"),
+///
+/// // The same, written as a struct.
+/// FrameLabel(label: "start"),
+///
+/// // A named anchor.
+/// FrameLabel(label: "start", anchor: true),
+/// ```
+#[derive(Debug, PartialEq)]
+pub struct FrameLabel {
+    /// The label, written as UTF-8.
+    ///
+    /// It must not contain null characters.
+    pub label: String,
+
+    /// Whether the label is a named anchor, which the player can navigate to
+    /// with the URL fragment (`NamedAnchorFlag`, from SWF 6).
+    ///
+    /// It is written as a byte of 1 after the label. Setting it before SWF 6 is
+    /// an error.
+    ///
+    /// Defaults to false, in which case the byte is not written.
+    pub anchor: bool,
+}
+
+impl<'de> Deserialize<'de> for FrameLabel {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct FrameLabelVisitor;
+
+        impl<'de> Visitor<'de> for FrameLabelVisitor {
+            type Value = FrameLabel;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a label or a struct")
+            }
+
+            fn visit_str<E: de::Error>(self, label: &str) -> Result<FrameLabel, E> {
+                Ok(FrameLabel {
+                    label: label.to_owned(),
+                    anchor: false,
+                })
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, map: A) -> Result<FrameLabel, A::Error> {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Fields {
+                    label: String,
+                    #[serde(default)]
+                    anchor: bool,
+                }
+
+                let fields = Fields::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                Ok(FrameLabel {
+                    label: fields.label,
+                    anchor: fields.anchor,
+                })
+            }
+        }
+
+        deserializer.deserialize_any(FrameLabelVisitor)
+    }
 }
 
 /// Binary data.
