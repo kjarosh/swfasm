@@ -1,0 +1,10 @@
+// The Metadata tag, which describes the SWF with XML, usually RDF.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(has_metadata: true), // says that the SWF contains a Metadata tag
+        Metadata(File("metadata.xml")),
+        ShowFrame,
+        End,
+    ],
+)
