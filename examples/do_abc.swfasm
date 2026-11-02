@@ -1,0 +1,24 @@
+// ABC bytecode in DoAbc and DoAbc2 tags, with a SymbolClass tag.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(action_script_3: true),
+
+        // The ABC file defines `Main`, a subclass of `flash.display.Sprite`
+        // whose constructor calls `trace("Hello from ABC")`.
+        DoAbc(File("do_abc.abc")),
+        DoAbc2(
+            lazy_initialize: true,
+            name: "frame1",
+            data: File("do_abc.abc"),
+        ),
+
+        SymbolClass([
+            (character: 0, name: "Main"),
+            (character: 1, name: "Other"),
+        ]),
+
+        ShowFrame,
+        End,
+    ],
+)
