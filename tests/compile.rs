@@ -1696,6 +1696,83 @@ fn script_limits_errors() {
 }
 
 #[test]
+fn metadata() {
+    assert_eq!(
+        compile_tags!(r#"Metadata(InlineBytes("3c 61 2f 3e"))"#),
+        [
+            0x45, 0x13, // header: code 77, length 5
+            b'<', b'a', b'/', b'>', // metadata
+            0x00, // null terminator
+        ]
+    );
+    // Bytes that aren't valid UTF-8, several tags, an old SWF, and no
+    // `has_metadata` flag.
+    assert_eq!(
+        compile_tags!(
+            r#"FileAttributes(), Metadata(InlineBytes("")), Metadata(InlineBytes("ff fe"))"#,
+            version: 1
+        ),
+        [
+            0x44, 0x11, // header: code 69, length 4
+            0x00, 0x00, 0x00, 0x00, // flags
+            0x41, 0x13, // header: code 77, length 1
+            0x00, // null terminator
+            0x43, 0x13, // header: code 77, length 3
+            0xFF, 0xFE, // metadata
+            0x00, // null terminator
+        ]
+    );
+    // The longest metadata that fits in the short header form, and the
+    // shortest that does not.
+    assert_eq!(
+        compile_tags!(&format!(r#"Metadata(InlineBytes("{}"))"#, "61".repeat(61))),
+        [
+            [0x7E, 0x13].as_slice(), // header: code 77, length 62
+            &[b'a'; 61],             // metadata
+            &[0x00],                 // null terminator
+        ]
+        .concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(r#"Metadata(InlineBytes("{}"))"#, "61".repeat(62))),
+        [
+            [0x7F, 0x13, 63, 0x00, 0x00, 0x00].as_slice(), // header: code 77, length 63
+            &[b'a'; 62],                                   // metadata
+            &[0x00],                                       // null terminator
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn metadata_from_file() {
+    assert_eq!(
+        compile_tags!(r#"Metadata(File("ab"))"#, &PathAsContents),
+        [
+            0x43, 0x13, // header: code 77, length 3
+            b'a', b'b', // metadata
+            0x00, // null terminator
+        ]
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, Metadata(File("a.xml"))])"#)
+            .contains(r#"tag #1: failed to read file "a.xml": files are not available"#)
+    );
+}
+
+#[test]
+fn metadata_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
+    // The metadata is null-terminated, so it can't contain null bytes.
+    assert!(
+        err(r#"Metadata(InlineBytes("61 00 62"))"#)
+            .contains("tag #1: null byte at offset 1, which would end the string early")
+    );
+    assert!(err(r#"Metadata("<a/>")"#).contains("Expected identifier"));
+    assert!(err("Metadata()").contains("Expected identifier"));
+}
+
+#[test]
 fn rascal_syntax() {
     let parse = |data: &str| -> Result<Data, String> {
         let swf = swfasm::parse(&format!("Swf(version: 10, tags: [DoAction({data})])"))
