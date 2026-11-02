@@ -349,6 +349,59 @@ fn tag_code_errors() {
 /// a field can be added.
 const STRUCTS: &[&str] = &[
     r#"Raw(code: 2, data: InlineBytes(""){})"#,
+    "DefineShape(id: 1, bounds: (width: 0, height: 0){})",
+    "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (records: []{}))",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (fill_styles: [LinearGradient(records: []{})]),
+    )",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (
+            fill_styles: [LinearGradient(records: [(ratio: 0, color: Rgb(0, 0, 0){})])],
+        ),
+    )",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (
+            fill_styles: [FocalGradient(gradient: (records: []), focal_point: 0{})],
+        ),
+    )",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (fill_styles: [Bitmap(character: 1{})]),
+    )",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (
+            line_styles: [(width: 0, color: Rgb(0, 0, 0){})],
+        ),
+    )",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (
+            records: [StyleChange(move_to: (x: 0, y: 0){})],
+        ),
+    )",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (
+            records: [StyleChange(move_to: (x: 0, y: 0{}))],
+        ),
+    )",
+    "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (records: [StraightEdge(dx: 0{})]))",
+    "DefineShape(
+        id: 1,
+        bounds: (width: 0, height: 0),
+        shape: (records: [CurvedEdge(control_dx: 0{})]),
+    )",
     "PlaceObject(character: 1, depth: 1{})",
     "PlaceObject(character: 1, depth: 1, matrix: (scale_x: 1{}))",
     "PlaceObject(character: 1, depth: 1, color_transform: (red_add: 0{}))",
@@ -816,6 +869,536 @@ fn remove_object() {
     assert_eq!(
         compile_tags!("RemoveObject2(depth: 0x1234)"),
         [0x02, 0x07, 0x34, 0x12]
+    );
+}
+
+#[test]
+fn define_shape() {
+    assert_eq!(
+        compile_tags!("DefineShape(id: 0x1234, bounds: (width: 0, height: 0))"),
+        [
+            0x87, 0x00, 0x34, 0x12, // header, ID
+            0x00, // bounds: no bits
+            0x00, 0x00, // no fill styles, no line styles
+            0x00, // no bits of style indices
+            0x00, // end
+        ]
+    );
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(
+                id: 1,
+                bounds: (x: 0.5, y: -8.5, width: 13, height: 11),
+                shape: (
+                    fill_styles: [Solid(Rgb(0x11, 0x22, 0x33))],
+                    line_styles: [(width: 1, color: Rgb(0x44, 0x55, 0x66))],
+                    records: [
+                        StyleChange(move_to: (x: 1, y: 2), fill_style_1: 1, line_style: 1),
+                        StraightEdge(dx: 10),
+                        StraightEdge(dy: -10),
+                        StraightEdge(dx: 1, dy: 1),
+                        CurvedEdge(control_dx: 1, anchor_dy: 1),
+                    ],
+                ),
+            )"
+        ),
+        [
+            0xA3, 0x00, 0x01, 0x00, // header, ID
+            // Bounds: 10, 270, -170, 50 twips in 10 bits.
+            0x50, 0x14, 0x87, 0x6A, 0xC1, 0x90, //
+            0x01, 0x00, 0x11, 0x22, 0x33, // a solid fill style
+            0x01, 0x14, 0x00, 0x44, 0x55, 0x66, // a line style, 20 twips wide
+            0x11, // 1 bit of fill style indices, 1 bit of line style indices
+            // Style change: move to 20, 40 twips in 7 bits, fill style 1 and
+            // line style 1, and the first bits of the straight edge.
+            0x34, 0xE5, 0x14, 0x7B, //
+            // Horizontal edge: 200 twips in 9 bits.
+            0x8C, 0x8D, //
+            // Vertical edge: -200 twips in 9 bits.
+            0xD9, 0xC6, //
+            // General edge: 20, 20 twips in 6 bits.
+            0x95, 0x14, //
+            // Curved edge: 20, 0, 0, 20 twips in 6 bits, and the end.
+            0x91, 0x40, 0x00, 0x50, 0x00,
+        ]
+    );
+}
+
+#[test]
+fn define_shape_fill_styles() {
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (
+                    fill_styles: [Solid(Rgb(0xFF, 0x80, 0x00))],
+                ),
+            )"
+        ),
+        [
+            0x8B, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x01, 0x00, 0xFF, 0x80, 0x00, // a solid fill style
+            0x00, // no line styles
+            0x10, // 1 bit of fill style indices, no bits of line style indices
+            0x00, // end
+        ]
+    );
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (fill_styles: [
+                LinearGradient(records: [
+                    (ratio: 0, color: Rgb(0xFF, 0x00, 0x00)),
+                    (ratio: 255, color: Rgb(0x00, 0x00, 0xFF)),
+                ]),
+            ]))"
+        ),
+        [
+            0x92, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x01, 0x10, // a linear gradient
+            0x00, // identity matrix
+            0x02, // pad, RGB, 2 records
+            0x00, 0xFF, 0x00, 0x00, // ratio, color
+            0xFF, 0x00, 0x00, 0xFF, // ratio, color
+            0x00, 0x10, 0x00, // no line styles, bits of style indices, end
+        ]
+    );
+    // The spread and interpolation modes are written in all versions.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (fill_styles: [RadialGradient(
+                matrix: (scale_x: 0.5, scale_y: 0.5, translate_x: 10, translate_y: 10),
+                spread: Reflect,
+                interpolation: LinearRgb,
+                records: [(ratio: 0x80, color: Rgb(0x12, 0x34, 0x56))],
+            )]))"
+        ),
+        [
+            0x95, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x01, 0x12, // a radial gradient
+            // Matrix: scale 0.5 in 17 bits, translate 200 twips in 9 bits.
+            0xC5, 0x00, 0x00, 0x80, 0x00, 0x25, 0x90, 0xC8, //
+            0x51, // reflect, linear RGB, 1 record
+            0x80, 0x12, 0x34, 0x56, // ratio, color
+            0x00, 0x10, 0x00, // no line styles, bits of style indices, end
+        ]
+    );
+    // Gradients without records are written as is.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (fill_styles: [RadialGradient(spread: Repeat, records: [])]),
+            )"
+        ),
+        [
+            0x8A, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x01, 0x12, 0x00, // a radial gradient, identity matrix
+            0x80, // repeat, RGB, no records
+            0x00, 0x10, 0x00, // no line styles, bits of style indices, end
+        ]
+    );
+    // Focal gradients are written even though DefineShape does not have them.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (fill_styles: [FocalGradient(
+                gradient: (records: [(ratio: 1, color: Rgb(0x01, 0x02, 0x03))]),
+                focal_point: -0.5,
+            )]))"
+        ),
+        [
+            0x90, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x01, 0x13, 0x00, // a focal gradient, identity matrix
+            0x01, // pad, RGB, 1 record
+            0x01, 0x01, 0x02, 0x03, // ratio, color
+            0x80, 0xFF, // focal point
+            0x00, 0x10, 0x00, // no line styles, bits of style indices, end
+        ]
+    );
+}
+
+#[test]
+fn define_shape_bitmap_fill_styles() {
+    // The type says whether the bitmap is repeating and smoothed.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (fill_styles: [
+                Bitmap(character: 0x1234),
+                Bitmap(character: 2, repeating: false),
+                Bitmap(character: 3, smoothed: false),
+                Bitmap(character: 4, repeating: false, smoothed: false, matrix: (translate_x: 1)),
+            ]))",
+            version: 8
+        ),
+        [
+            0x99, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x04, // 4 fill styles
+            0x40, 0x34, 0x12, 0x00, // repeating, smoothed, character, identity matrix
+            0x41, 0x02, 0x00, 0x00, // clipped, smoothed, character, identity matrix
+            0x42, 0x03, 0x00, 0x00, // repeating, not smoothed, character, identity matrix
+            0x43, 0x04, 0x00, // clipped, not smoothed, character
+            0x0C, 0xA0, 0x00, // matrix: translate 20 twips in 6 bits
+            0x00, 0x30, 0x00, // no line styles, bits of style indices, end
+        ]
+    );
+    // Before SWF 8, smoothed bitmap fills are written the same.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (fill_styles: [
+                Bitmap(character: 0x1234),
+                Bitmap(character: 2, repeating: false),
+            ]))",
+            version: 7
+        ),
+        [
+            0x8F, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x02, // 2 fill styles
+            0x40, 0x34, 0x12, 0x00, // repeating, smoothed, character, identity matrix
+            0x41, 0x02, 0x00, 0x00, // clipped, smoothed, character, identity matrix
+            0x00, 0x20, 0x00, // no line styles, bits of style indices, end
+        ]
+    );
+}
+
+#[test]
+fn define_shape_line_styles() {
+    // The extremes of the width.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (line_styles: [
+                (width: 0, color: Rgb(0xFF, 0xFF, 0xFF)),
+                (width: 3276.75, color: Rgb(0x00, 0x00, 0x01)),
+            ]))"
+        ),
+        [
+            0x91, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x00, // no fill styles
+            0x02, // 2 line styles
+            0x00, 0x00, 0xFF, 0xFF, 0xFF, // width, color
+            0xFF, 0xFF, 0x00, 0x00, 0x01, // width, color
+            0x02, // no bits of fill style indices, 2 bits of line style indices
+            0x00, // end
+        ]
+    );
+}
+
+#[test]
+fn define_shape_style_counts() {
+    let solid = "Solid(Rgb(0, 0, 0)),".repeat(254);
+    let mut expected = vec![0xBF, 0x00, 0xFF, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0xFE];
+    expected.extend([0x00; 254 * 4]); // fill styles
+    expected.extend([0x00, 0x80, 0x00]); // no line styles, bits of style indices, end
+    assert_eq!(
+        compile_tags!(format!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (fill_styles: [{solid}]))"
+        )),
+        expected
+    );
+    let line = "(width: 0, color: Rgb(0, 0, 0)),".repeat(254);
+    let mut expected = vec![
+        0xBF, 0x00, 0xFD, 0x04, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFE,
+    ];
+    expected.extend([0x00; 254 * 5]); // line styles
+    expected.extend([0x08, 0x00]); // bits of style indices, end
+    assert_eq!(
+        compile_tags!(format!(
+            "DefineShape(id: 1, bounds: (width: 0, height: 0), shape: (line_styles: [{line}]))"
+        )),
+        expected
+    );
+}
+
+#[test]
+fn define_shape_style_change() {
+    // Only the fields that are set are written, and style indices are written
+    // as long as they fit in their bits, even if they do not refer to a style.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (
+                    fill_styles: [Solid(Rgb(0, 0, 0)), Solid(Rgb(0, 0, 0))],
+                    line_styles: [(width: 0, color: Rgb(0, 0, 0))],
+                    records: [
+                        StyleChange(move_to: (x: -1, y: 0.05)),
+                        StyleChange(fill_style_0: 3),
+                        StyleChange(fill_style_1: 0),
+                        StyleChange(line_style: 1),
+                        StyleChange(fill_style_0: 1, fill_style_1: 2, line_style: 0),
+                    ],
+                ),
+            )"
+        ),
+        [
+            0x9B, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 2 fill styles
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, // 1 line style
+            0x21, // 2 bits of fill style indices, 1 bit of line style indices
+            // Move to -20, 1 twips in 6 bits (23 bits), fill style 0 (8 bits),
+            // fill style 1 (8 bits), line style (7 bits), all three (11 bits),
+            // and the end (6 bits).
+            0x04, 0xD6, 0x02, 0x16, 0x20, 0x44, 0xE6, 0x00,
+        ]
+    );
+    // The extremes of the range of moves, which use all 31 bits.
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (
+                    records: [StyleChange(move_to: (x: -53687091.2, y: 53687091.15))],
+                ),
+            )"
+        ),
+        [
+            0x90, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x00, 0x00, 0x00, // no styles
+            // Move to -2^30, 2^30 - 1 twips in 31 bits, and the end.
+            0x07, 0xF0, 0x00, 0x00, 0x00, 0x1F, 0xFF, 0xFF, 0xFF, 0x80,
+        ]
+    );
+}
+
+#[test]
+fn define_shape_edges() {
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (
+                    records: [
+                        StraightEdge(),
+                        StraightEdge(dx: 0.05),
+                        StraightEdge(dy: -0.05),
+                        StraightEdge(dx: -3276.8, dy: 3276.75),
+                    ],
+                ),
+            )"
+        ),
+        [
+            0x90, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x00, 0x00, 0x00, // no styles
+            // Vertical edge: 0 in 2 bits (10 bits), horizontal edge: 1 twip in
+            // 2 bits (10 bits), vertical edge: -1 twip in 2 bits (10 bits),
+            // general edge: -2^16, 2^16 - 1 twips in 17 bits (41 bits), and
+            // the end (6 bits).
+            0xC1, 0x30, 0x1C, 0x1F, 0xFC, 0x00, 0x01, 0xFF, 0xFE, 0x00,
+        ]
+    );
+    assert_eq!(
+        compile_tags!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (
+                    records: [
+                        CurvedEdge(),
+                        CurvedEdge(
+                            control_dx: 3276.75,
+                            control_dy: -3276.8,
+                            anchor_dx: 0.05,
+                            anchor_dy: -0.05,
+                        ),
+                    ],
+                ),
+            )"
+        ),
+        [
+            0x92, 0x00, 0x01, 0x00, 0x00, // header, ID, bounds
+            0x00, 0x00, 0x00, // no styles
+            // Curved edge: 0, 0, 0, 0 in 2 bits (14 bits), curved edge:
+            // 2^16 - 1, -2^16, 1, -1 twips in 17 bits (74 bits), and the end
+            // (6 bits).
+            0x80, 0x02, 0xF7, 0xFF, 0xFC, 0x00, 0x00, 0x00, 0x03, 0xFF, 0xFF, 0x00,
+        ]
+    );
+}
+
+#[test]
+fn define_shape_errors() {
+    let shape = |fields: &str| {
+        format!("DefineShape(id: 1, bounds: (width: 0, height: 0), shape: ({fields}))")
+    };
+    assert_err!(
+        tag_err!(shape(&format!(
+            "fill_styles: [{}]",
+            "Solid(Rgb(0, 0, 0)),".repeat(255)
+        ))),
+        "tag #1: shape: fill_styles: DefineShape can have at most 254 fill styles"
+    );
+    assert_err!(
+        tag_err!(shape(&format!(
+            "line_styles: [{}]",
+            "(width: 0, color: Rgb(0, 0, 0)),".repeat(255)
+        ))),
+        "tag #1: shape: line_styles: DefineShape can have at most 254 line styles"
+    );
+    assert_err!(
+        tag_err!(shape(&format!(
+            "fill_styles: [LinearGradient(records: [{}])]",
+            "(ratio: 0, color: Rgb(0, 0, 0)),".repeat(16)
+        ))),
+        "tag #1: shape: fill_styles: fill style #0: records: there can be at most 15 gradient \
+         records"
+    );
+    assert_err!(
+        tag_err!(
+            shape("fill_styles: [Solid(Rgb(0, 0, 0)), Bitmap(character: 1, smoothed: false)]"),
+            version: 7
+        ),
+        "tag #1: shape: fill_styles: fill style #1: smoothed: non-smoothed bitmap fills cannot be \
+         written before SWF 8"
+    );
+}
+
+#[test]
+fn define_shape_invalid_values() {
+    let fill_err = |fill_style: &str| {
+        tag_err!(format!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (fill_styles: [Solid(Rgb(0, 0, 0)), {fill_style}]),
+            )"
+        ))
+    };
+    assert_err!(
+        fill_err("Solid(Rgba(0, 0, 0, 0))"),
+        "tag #1: shape: fill_styles: fill style #1: the color has alpha, but is stored as RGB"
+    );
+    assert_err!(
+        fill_err(
+            "LinearGradient(records: [
+                (ratio: 0, color: Rgb(0, 0, 0)),
+                (ratio: 1, color: Rgba(0, 0, 0, 0)),
+            ])"
+        ),
+        "tag #1: shape: fill_styles: fill style #1: records: record #1: color: the color has \
+         alpha, but is stored as RGB"
+    );
+    assert_err!(
+        fill_err("RadialGradient(matrix: (scale_x: 0.1), records: [])"),
+        "tag #1: shape: fill_styles: fill style #1: matrix: scale_x: 0.1 is not representable as a \
+         16.16 fixed point number"
+    );
+    assert_err!(
+        fill_err("FocalGradient(gradient: (records: []), focal_point: 0.001)"),
+        "tag #1: shape: fill_styles: fill style #1: focal_point: 0.001 is not representable as an \
+         8.8 fixed point number"
+    );
+    assert_err!(
+        fill_err("FocalGradient(gradient: (records: []), focal_point: 128)"),
+        "tag #1: shape: fill_styles: fill style #1: focal_point: 128 is not representable as an \
+         8.8 fixed point number"
+    );
+    assert_err!(
+        fill_err(
+            "FocalGradient(gradient: (matrix: (translate_x: 0.01), records: []), focal_point: 0)"
+        ),
+        "tag #1: shape: fill_styles: fill style #1: gradient: matrix: translate_x: 0.01px is not a \
+         whole number of twips"
+    );
+    assert_err!(
+        fill_err("Bitmap(character: 1, matrix: (translate_y: 53687091.2))"),
+        "tag #1: shape: fill_styles: fill style #1: matrix: translate_y: 53687091.2px is out of \
+         range"
+    );
+
+    let line_err = |line_style: &str| {
+        tag_err!(format!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (line_styles: [{line_style}]),
+            )"
+        ))
+    };
+    assert_err!(
+        line_err("(width: 0.01, color: Rgb(0, 0, 0))"),
+        "tag #1: shape: line_styles: line style #0: width: 0.01px is not a whole number of twips"
+    );
+    assert_err!(
+        line_err("(width: 3276.8, color: Rgb(0, 0, 0))"),
+        "tag #1: shape: line_styles: line style #0: width: 3276.8px is out of range"
+    );
+    assert_err!(
+        line_err("(width: -0.05, color: Rgb(0, 0, 0))"),
+        "tag #1: shape: line_styles: line style #0: width: -0.05px is out of range"
+    );
+    assert_err!(
+        line_err("(width: 0, color: Rgba(0, 0, 0, 0))"),
+        "tag #1: shape: line_styles: line style #0: color: the color has alpha, but is stored as \
+         RGB"
+    );
+
+    let record_err = |record: &str| {
+        tag_err!(format!(
+            "DefineShape(
+                id: 1,
+                bounds: (width: 0, height: 0),
+                shape: (
+                    fill_styles: [Solid(Rgb(0, 0, 0)), Solid(Rgb(0, 0, 0))],
+                    line_styles: [(width: 0, color: Rgb(0, 0, 0))],
+                    records: [StraightEdge(), {record}],
+                ),
+            )"
+        ))
+    };
+    assert_err!(
+        record_err("StyleChange()"),
+        "tag #1: shape: records: record #1: a style change without fields would be written as the \
+         end record"
+    );
+    assert_err!(
+        record_err("StyleChange(move_to: (x: 0.01, y: 0))"),
+        "tag #1: shape: records: record #1: move_to: x: 0.01px is not a whole number of twips"
+    );
+    assert_err!(
+        record_err("StyleChange(move_to: (x: 0, y: 53687091.2))"),
+        "tag #1: shape: records: record #1: move_to: y: 53687091.2px is out of range"
+    );
+    assert_err!(
+        record_err("StyleChange(fill_style_0: 4)"),
+        "tag #1: shape: records: record #1: fill_style_0: 4 does not fit in the 2 bits of fill \
+         style indices"
+    );
+    assert_err!(
+        record_err("StyleChange(fill_style_1: 4)"),
+        "tag #1: shape: records: record #1: fill_style_1: 4 does not fit in the 2 bits of fill \
+         style indices"
+    );
+    assert_err!(
+        record_err("StyleChange(line_style: 2)"),
+        "tag #1: shape: records: record #1: line_style: 2 does not fit in the 1 bits of line style \
+         indices"
+    );
+    assert_err!(
+        record_err("StraightEdge(dx: 3276.8)"),
+        "tag #1: shape: records: record #1: dx: 3276.8px is out of range"
+    );
+    assert_err!(
+        record_err("StraightEdge(dy: -3276.85)"),
+        "tag #1: shape: records: record #1: dy: -3276.85px is out of range"
+    );
+    assert_err!(
+        record_err("CurvedEdge(control_dx: 0.01)"),
+        "tag #1: shape: records: record #1: control_dx: 0.01px is not a whole number of twips"
+    );
+    assert_err!(
+        record_err("CurvedEdge(control_dy: 3276.8)"),
+        "tag #1: shape: records: record #1: control_dy: 3276.8px is out of range"
+    );
+    assert_err!(
+        record_err("CurvedEdge(anchor_dx: -3276.85)"),
+        "tag #1: shape: records: record #1: anchor_dx: -3276.85px is out of range"
+    );
+    assert_err!(
+        record_err("CurvedEdge(anchor_dy: 0.01)"),
+        "tag #1: shape: records: record #1: anchor_dy: 0.01px is not a whole number of twips"
     );
 }
 
