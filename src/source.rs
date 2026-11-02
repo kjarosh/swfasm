@@ -232,6 +232,19 @@ pub enum Tag {
     /// Gives the current frame a label (code 43).
     FrameLabel(FrameLabel),
 
+    /// Exports characters under names, for other SWFs to import (code 56).
+    ///
+    /// The count of assets is stored in 16 bits, so more than 65535 assets are
+    /// an error.
+    ///
+    /// ```ron
+    /// ExportAssets([
+    ///     (character: 1, name: "clip"),
+    ///     (character: 2, name: "data"),
+    /// ]),
+    /// ```
+    ExportAssets(Vec<ExportedAsset>),
+
     /// AVM1 actions that initialize a sprite (code 59).
     DoInitAction {
         /// The character ID of the sprite.
@@ -534,6 +547,19 @@ impl<'de> Deserialize<'de> for FrameLabel {
 
         deserializer.deserialize_any(FrameLabelVisitor)
     }
+}
+
+/// A character exported under a name, in `ExportAssets`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExportedAsset {
+    /// The ID of the character to export.
+    pub character: u16,
+
+    /// The name to export the character under, written as UTF-8.
+    ///
+    /// It must not contain null characters.
+    pub name: String,
 }
 
 /// Binary data.
