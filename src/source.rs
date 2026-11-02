@@ -293,6 +293,12 @@ pub enum Tag {
         use_direct_blit: bool,
     },
 
+    /// Describes the SWF with XML metadata, usually RDF (code 77).
+    ///
+    /// The metadata is followed by a null terminator, so it must not contain
+    /// null bytes.
+    Metadata(Data),
+
     /// Defines a character holding arbitrary binary data (code 87).
     DefineBinaryData {
         /// The character ID.

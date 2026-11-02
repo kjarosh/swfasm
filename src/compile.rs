@@ -147,6 +147,15 @@ fn null_terminated_str(string: &str) -> Result<&SwfStr> {
     Ok(SwfStr::from_utf8_str(string))
 }
 
+/// Converts bytes to a null-terminated `SwfStr`, failing if they contain a null
+/// byte.
+fn null_terminated_bytes(bytes: &[u8]) -> Result<&SwfStr> {
+    if let Some(offset) = bytes.iter().position(|&byte| byte == 0) {
+        bail!("null byte at offset {offset}, which would end the string early");
+    }
+    Ok(SwfStr::from_bytes(bytes))
+}
+
 /// Returns the explicit frame count, or else the number of `ShowFrame` tags.
 fn num_frames(explicit: Option<u16>, tags: &[Tag]) -> Result<u16> {
     match explicit {
@@ -203,6 +212,10 @@ fn write_tag(
             attributes.set(FileAttributes::USE_GPU, *use_gpu);
             attributes.set(FileAttributes::USE_DIRECT_BLIT, *use_direct_blit);
             swf::Tag::FileAttributes(attributes)
+        }
+        Tag::Metadata(metadata) => {
+            data = read_data(metadata, swf_version, files)?;
+            swf::Tag::Metadata(null_terminated_bytes(&data)?)
         }
         Tag::SetBackgroundColor(rgb) => {
             if *rgb > 0xFFFFFF {
