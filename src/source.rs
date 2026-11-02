@@ -307,11 +307,32 @@ pub enum Tag {
         use_direct_blit: bool,
     },
 
+    /// An ABC file (code 72).
+    DoAbc(Data),
+
     /// Describes the SWF with XML metadata, usually RDF (code 77).
     ///
     /// The metadata is followed by a null terminator, so it must not contain
     /// null bytes.
     Metadata(Data),
+
+    /// An ABC file with a name and flags (code 82).
+    DoAbc2 {
+        /// The `kDoAbcLazyInitializeFlag` flag (bit 0).
+        ///
+        /// Defaults to false.
+        #[serde(default)]
+        lazy_initialize: bool,
+
+        /// The name, written as UTF-8.
+        ///
+        /// It must not contain null characters. Defaults to an empty name.
+        #[serde(default)]
+        name: String,
+
+        /// The ABC file.
+        data: Data,
+    },
 
     /// Defines a character holding arbitrary binary data (code 87).
     DefineBinaryData {

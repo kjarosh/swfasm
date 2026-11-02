@@ -12,8 +12,8 @@ use ron::extensions::Extensions;
 use std::borrow::Cow;
 use std::fmt::Display;
 use swf::{
-    Color, DefineBinaryData, ExportedAsset, FileAttributes, Fixed8, Fixed16, FrameLabel, Header,
-    Rectangle, RemoveObject, SwfStr, TagCode, Twips,
+    Color, DefineBinaryData, DoAbc2, DoAbc2Flag, ExportedAsset, FileAttributes, Fixed8, Fixed16,
+    FrameLabel, Header, Rectangle, RemoveObject, SwfStr, TagCode, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -326,6 +326,25 @@ fn write_tag(
             max_recursion_depth: *max_recursion_depth,
             timeout_in_seconds: *timeout_seconds,
         },
+        Tag::DoAbc(abc) => {
+            data = read_data(abc, swf_version, files)?;
+            swf::Tag::DoAbc(&data)
+        }
+        Tag::DoAbc2 {
+            lazy_initialize,
+            name,
+            data: abc,
+        } => {
+            let mut flags = DoAbc2Flag::empty();
+            flags.set(DoAbc2Flag::LAZY_INITIALIZE, *lazy_initialize);
+            let name = null_terminated_str(name).context("name")?;
+            data = read_data(abc, swf_version, files)?;
+            swf::Tag::DoAbc2(DoAbc2 {
+                flags,
+                name,
+                data: &data,
+            })
+        }
         Tag::DefineBinaryData {
             id,
             data: binary_data,
