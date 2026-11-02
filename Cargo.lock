@@ -428,7 +428,7 @@ dependencies = [
  "annotate-snippets",
  "indexmap",
  "serde",
- "swf 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "swf 0.3.0",
  "winnow",
 ]
 
@@ -547,8 +547,9 @@ dependencies = [
 
 [[package]]
 name = "swf"
-version = "0.3.0"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=a508f6f972ac64a2ef5944b9a79f9868a3f349be#a508f6f972ac64a2ef5944b9a79f9868a3f349be"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f7bad150e1155d312085627285ff1586e03efe746ac1aaae05a6b969f8abb50"
 dependencies = [
  "bitflags",
  "bitstream-io",
@@ -571,7 +572,7 @@ dependencies = [
  "rascal",
  "ron",
  "serde",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=a508f6f972ac64a2ef5944b9a79f9868a3f349be)",
+ "swf 0.4.0",
  "walkdir",
 ]
 
