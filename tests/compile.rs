@@ -1131,6 +1131,168 @@ fn clip_actions_from_files() {
 }
 
 #[test]
+fn define_button() {
+    // The body is the character ID, the records terminated by a 0 byte, and
+    // the actions.
+    assert_eq!(
+        compile_tags!(r#"DefineButton(id: 0x1234, records: [], actions: InlineBytes("00"))"#),
+        [
+            0xC4, 0x01, // header
+            0x34, 0x12, // ID
+            0x00, // end of records
+            0x00, // actions
+        ]
+    );
+    // A record is its flags, the character ID, the depth and the matrix, which
+    // is the identity matrix by default.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineButton(
+                id: 1,
+                records: [(states: [Up, Over, Down, HitTest], character: 2, depth: 3)],
+                actions: InlineBytes("07 00"),
+            )"#
+        ),
+        [
+            0xCB, 0x01, // header
+            0x01, 0x00, // ID
+            0x0F, 0x02, 0x00, 0x03, 0x00, 0x00, // all states, character, depth, matrix
+            0x00, // end of records
+            0x07, 0x00, // actions
+        ]
+    );
+    assert_eq!(
+        compile_tags!(
+            r#"DefineButton(
+                id: 1,
+                records: [
+                    (states: [Up], character: 5, depth: 1, matrix: (translate_x: 1, translate_y: -1)),
+                    (states: [HitTest], character: 6, depth: 2),
+                ],
+                actions: InlineBytes("00"),
+            )"#
+        ),
+        [
+            0xD2, 0x01, // header
+            0x01, 0x00, // ID
+            0x01, 0x05, 0x00, 0x01, 0x00, 0x0C, 0xA5, 0x80, // Up, character, depth, matrix
+            0x08, 0x06, 0x00, 0x02, 0x00, 0x00, // HitTest, character, depth, matrix
+            0x00, // end of records
+            0x00, // actions
+        ]
+    );
+}
+
+#[test]
+fn define_button_malformed() {
+    // Repeated states, states in any order, and characters that don't exist.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineButton(
+                id: 1,
+                records: [
+                    (states: [HitTest, Up, Up], character: 0xFFFF, depth: 1),
+                    (states: [Down], character: 0xFFFF, depth: 1),
+                ],
+                actions: InlineBytes("00"),
+            )"#
+        ),
+        [
+            0xD0, 0x01, // header
+            0x01, 0x00, // ID
+            0x09, 0xFF, 0xFF, 0x01, 0x00, 0x00, // HitTest and Up, character, depth, matrix
+            0x04, 0xFF, 0xFF, 0x01, 0x00, 0x00, // Down, character, depth, matrix
+            0x00, // end of records
+            0x00, // actions
+        ]
+    );
+    // A record without states.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineButton(id: 1, records: [(states: [], character: 1, depth: 1)], actions: InlineBytes("00"))"#
+        ),
+        [
+            0xCA, 0x01, // header
+            0x01, 0x00, // ID
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, // no states, character, depth, matrix
+            0x00, // end of records
+            0x00, // actions
+        ]
+    );
+    // Actions are written as is: no End action is appended.
+    assert_eq!(
+        compile_tags!(r#"DefineButton(id: 1, records: [], actions: InlineBytes(""))"#),
+        [
+            0xC3, 0x01, // header
+            0x01, 0x00, // ID
+            0x00, // end of records
+        ]
+    );
+}
+
+#[test]
+fn define_button_actions_from_file() {
+    assert_eq!(
+        compile_tags!(
+            r#"DefineButton(id: 1, records: [], actions: File("ab"))"#,
+            &PathAsContents
+        ),
+        [
+            0xC5, 0x01, // header
+            0x01, 0x00, // ID
+            0x00, // end of records
+            b'a', b'b', // actions
+        ]
+    );
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [DefineButton(id: 1, records: [], actions: File("x"))])"#,
+            &Failing
+        )
+        .contains(r#"tag #0: actions: failed to read file "x": no file named x"#)
+    );
+}
+
+#[test]
+fn define_button_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
+    let record_err = |record: &str| {
+        err(&format!(
+            r#"DefineButton(
+                id: 1,
+                records: [(states: [Up], character: 1, depth: 1), {record}],
+                actions: InlineBytes("00"),
+            )"#
+        ))
+    };
+    assert!(
+        record_err("(states: [Up], character: 1, depth: 2, matrix: (scale_x: 0.1))").contains(
+            "tag #1: records: record #1: matrix: scale_x: 0.1 is not representable as a 16.16 fixed point number"
+        )
+    );
+    assert!(
+        record_err("(states: [Hit], character: 1, depth: 2)")
+            .contains("Unexpected variant named `Hit` in enum `ButtonState`")
+    );
+    assert!(
+        record_err("(character: 1, depth: 2)")
+            .contains("Unexpected missing field named `states` in `ButtonRecord`")
+    );
+    assert!(
+        record_err("(states: [Up], character: 1, depth: 2, color_transform: ())")
+            .contains("Unexpected field named `color_transform` in `ButtonRecord`")
+    );
+    assert!(
+        err("DefineButton(id: 1, records: [])")
+            .contains("Unexpected missing field named `actions` in `DefineButton`")
+    );
+    assert!(
+        err(r#"DefineButton(id: 1, records: [], actions: InlineBytes(""), track_as_menu: true)"#)
+            .contains("Unexpected field named `track_as_menu` in `DefineButton`")
+    );
+}
+
+#[test]
 fn define_binary_data() {
     // The body is the character ID, a reserved 32-bit field and the data.
     assert_eq!(
