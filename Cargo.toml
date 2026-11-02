@@ -8,7 +8,7 @@ edition = "2024"
 keywords = ["swf", "flash", "assembler", "compiler", "ron"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/kjarosh/swfasm"
-version = "0.0.0"
+version = "0.1.0"
 
 [package]
 name = "swfasm"
