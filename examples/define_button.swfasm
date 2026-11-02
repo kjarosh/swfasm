@@ -5,32 +5,43 @@ Swf(
     tags: [
         FileAttributes(),
 
-        // DefineShape, which defines the 100x40 pixel rectangles that make up
-        // the button, in red, green and blue.
-        Raw(code: 2, data: InlineBytes([
-            "01 00",                               // ID
-            "60 00 3e 80 00 19 00",                // bounds
-            "01 00 cc 33 33",                      // fill styles: solid red
-            "00",                                  // line styles: none
-            "10",                                  // fill and line style bit counts
-            "13 d0 fa 1c ac 83 a2 0c 39 67 00 00", // the rectangle
-        ])),
-        Raw(code: 2, data: InlineBytes([
-            "02 00",                               // ID
-            "60 00 3e 80 00 19 00",                // bounds
-            "01 00 33 cc 33",                      // fill styles: solid green
-            "00",                                  // line styles: none
-            "10",                                  // fill and line style bit counts
-            "13 d0 fa 1c ac 83 a2 0c 39 67 00 00", // the rectangle
-        ])),
-        Raw(code: 2, data: InlineBytes([
-            "03 00",                               // ID
-            "60 00 3e 80 00 19 00",                // bounds
-            "01 00 33 33 cc",                      // fill styles: solid blue
-            "00",                                  // line styles: none
-            "10",                                  // fill and line style bit counts
-            "13 d0 fa 1c ac 83 a2 0c 39 67 00 00", // the rectangle
-        ])),
+        // 100x40 pixel rectangles in red, green and blue.
+        DefineShape(
+            id: 1,
+            bounds: (x_min: 0, x_max: 100, y_min: 0, y_max: 40),
+            fill_styles: [Solid(0xCC3333)],
+            records: [
+                StyleChange(fill_style_1: 1),
+                StraightEdge(dx: 100),
+                StraightEdge(dy: 40),
+                StraightEdge(dx: -100),
+                StraightEdge(dy: -40),
+            ],
+        ),
+        DefineShape(
+            id: 2,
+            bounds: (x_min: 0, x_max: 100, y_min: 0, y_max: 40),
+            fill_styles: [Solid(0x33CC33)],
+            records: [
+                StyleChange(fill_style_1: 1),
+                StraightEdge(dx: 100),
+                StraightEdge(dy: 40),
+                StraightEdge(dx: -100),
+                StraightEdge(dy: -40),
+            ],
+        ),
+        DefineShape(
+            id: 3,
+            bounds: (x_min: 0, x_max: 100, y_min: 0, y_max: 40),
+            fill_styles: [Solid(0x3333CC)],
+            records: [
+                StyleChange(fill_style_1: 1),
+                StraightEdge(dx: 100),
+                StraightEdge(dy: 40),
+                StraightEdge(dx: -100),
+                StraightEdge(dy: -40),
+            ],
+        ),
 
         DefineButton(
             id: 4,
