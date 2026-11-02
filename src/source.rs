@@ -257,6 +257,16 @@ pub enum Tag {
         actions: Data,
     },
 
+    /// Overrides the default limits of ActionScript (code 65).
+    ScriptLimits {
+        /// The maximum depth of nested function calls (`MaxRecursionDepth`).
+        max_recursion_depth: u16,
+
+        /// The number of seconds that the player runs ActionScript for before
+        /// asking whether to stop it (`ScriptTimeoutSeconds`).
+        timeout_seconds: u16,
+    },
+
     /// Describes the SWF to the player (code 69).
     ///
     /// All flags default to false.
