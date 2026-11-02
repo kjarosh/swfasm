@@ -1,0 +1,25 @@
+// Frames with labels, which ActionScript can go to by name.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+
+        // Frame 1
+        FrameLabel("intro"),
+        DoAction(Rascal(r#"gotoAndStop("end");"#)),
+        ShowFrame,
+
+        // Frame 2
+        FrameLabel(label: "middle"),
+        ShowFrame,
+
+        // Frame 3
+        FrameLabel(
+            label: "end",
+            anchor: true,       // a named anchor, from SWF 6, default false
+        ),
+        DoAction(Rascal(r#"trace("reached " + _currentframe);"#)),
+        ShowFrame,
+        End,
+    ],
+)
