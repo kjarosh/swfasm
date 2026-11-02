@@ -237,6 +237,13 @@ fn write_tag(
             )?;
             return Ok(());
         }
+        Tag::DoInitAction { sprite, actions } => {
+            data = read_data(actions, swf_version, files)?;
+            swf::Tag::DoInitAction {
+                id: *sprite,
+                action_data: &data,
+            }
+        }
         Tag::DefineBinaryData {
             id,
             data: binary_data,
