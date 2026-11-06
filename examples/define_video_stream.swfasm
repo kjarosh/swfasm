@@ -1,0 +1,54 @@
+// A video stream, scaled up on the stage, whose two frames are a red and a
+// blue square in the Screen Video codec.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+
+        DefineVideoStream(
+            id: 1,
+            num_frames: 2,          // the number of VideoFrame tags
+            width: 16,              // pixels
+            height: 16,
+            smoothing: false,       // default
+            deblocking: UseVideoPacketValue, // default
+            codec: ScreenVideo,
+        ),
+
+        // Each frame is a 16x16 pixel SCREENVIDEOPACKET of a single block,
+        // which holds the pixels in BGR, deflated.
+        VideoFrame(stream: 1, frame: 0, data: InlineBytes([
+            "13",                   // a key frame in the Screen Video codec
+            "00 10",                // 16 pixel blocks, 16 pixels wide
+            "00 10",                // 16 pixel blocks, 16 pixels high
+            "00 11",                // the size of the block
+            "78 da 33 36 3e 63 3c 8a 46 d1 48 45 00 1d e5 32 10", // red
+        ])),
+
+        PlaceObject2(
+            depth: 1,
+            character: 1,
+            ratio: 0,               // in a video, the frame to display
+            matrix: (
+                scale_x: 10,        // scales the video to 160x160 pixels
+                scale_y: 10,
+                translate_x: 195,
+                translate_y: 120,
+            ),
+        ),
+        ShowFrame,
+
+        VideoFrame(stream: 1, frame: 1, data: InlineBytes([
+            "13",                   // a key frame in the Screen Video codec
+            "00 10",                // 16 pixel blocks, 16 pixels wide
+            "00 10",                // 16 pixel blocks, 16 pixels high
+            "00 11",                // the size of the block
+            "78 da 3b 63 6c 7c 66 14 8d a2 91 8a 00 4f f4 32 10", // blue
+        ])),
+
+        PlaceObject2(depth: 1, move: true, ratio: 1), // displays the next frame
+        ShowFrame,
+
+        End,
+    ],
+)
