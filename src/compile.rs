@@ -323,6 +323,10 @@ fn write_tag(
         Tag::DefineVideoStream(stream) => {
             swf::Tag::DefineVideoStream(video::convert_define_video_stream(stream))
         }
+        Tag::VideoFrame(frame) => {
+            data = read_data(&frame.data, swf_version, files)?;
+            swf::Tag::VideoFrame(video::convert_video_frame(frame, &data))
+        }
         Tag::ScriptLimits {
             max_recursion_depth,
             timeout_seconds,

@@ -1,6 +1,6 @@
 //! Converts the video tags for the swf crate.
 
-use crate::source::{DefineVideoStream, VideoCodec, VideoDeblocking};
+use crate::source::{DefineVideoStream, VideoCodec, VideoDeblocking, VideoFrame};
 
 /// Converts a `DefineVideoStream` tag into an `swf::DefineVideoStream`.
 pub(super) fn convert_define_video_stream(stream: &DefineVideoStream) -> swf::DefineVideoStream {
@@ -12,6 +12,16 @@ pub(super) fn convert_define_video_stream(stream: &DefineVideoStream) -> swf::De
         is_smoothed: stream.smoothing,
         deblocking: convert_deblocking(stream.deblocking),
         codec: convert_codec(stream.codec),
+    }
+}
+
+/// Converts a `VideoFrame` tag into an `swf::VideoFrame`, given the data of
+/// the frame.
+pub(super) fn convert_video_frame<'a>(frame: &VideoFrame, data: &'a [u8]) -> swf::VideoFrame<'a> {
+    swf::VideoFrame {
+        stream_id: frame.stream,
+        frame_num: frame.frame,
+        data,
     }
 }
 

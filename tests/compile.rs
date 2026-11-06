@@ -2006,6 +2006,118 @@ fn define_video_stream_errors() {
 }
 
 #[test]
+fn video_frame() {
+    // The body is the character ID of the stream, the number of the frame and
+    // the data of the frame.
+    assert_eq!(
+        compile_tags!(r#"VideoFrame(stream: 0x1234, frame: 0x5678, data: InlineBytes("11 22"))"#),
+        [
+            0x46, 0x0F, // header: code 61, length 6
+            0x34, 0x12, // stream
+            0x78, 0x56, // frame number
+            0x11, 0x22, // data
+        ]
+    );
+    // The data is not checked against the codec of the stream.
+    assert_eq!(
+        compile_tags!(r#"VideoFrame(stream: 1, frame: 0, data: InlineBytes(""))"#),
+        [
+            0x44, 0x0F, // header: code 61, length 4
+            0x01, 0x00, // stream
+            0x00, 0x00, // frame number
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"VideoFrame(stream: 1, frame: 0, data: InlineBytes("ff ff"))"#),
+        [0x46, 0x0F, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF]
+    );
+    // The stream doesn't have to be defined, and frames can repeat or come out
+    // of order.
+    assert_eq!(
+        compile_tags!(
+            r#"VideoFrame(stream: 0, frame: 1, data: InlineBytes("00")),
+               VideoFrame(stream: 0xFFFF, frame: 1, data: InlineBytes("00"))"#
+        ),
+        [
+            0x45, 0x0F, 0x00, 0x00, 0x01, 0x00, 0x00, // frame #0
+            0x45, 0x0F, 0xFF, 0xFF, 0x01, 0x00, 0x00, // frame #1
+        ]
+    );
+    // The longest data that fits in the short header form, and the shortest
+    // that does not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"VideoFrame(stream: 1, frame: 0, data: InlineBytes("{}"))"#,
+            "00".repeat(58)
+        )),
+        [[0x7E, 0x0F, 0x01, 0x00, 0x00, 0x00].as_slice(), &[0; 58]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"VideoFrame(stream: 1, frame: 0, data: InlineBytes("{}"))"#,
+            "00".repeat(59)
+        )),
+        [
+            [
+                0x7F, 0x0F, 63, 0x00, 0x00, 0x00, // long header
+                0x01, 0x00, // stream
+                0x00, 0x00, // frame number
+            ]
+            .as_slice(),
+            &[0; 59]
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn video_frame_from_file() {
+    assert_eq!(
+        compile_tags!(
+            r#"VideoFrame(stream: 1, frame: 0, data: File("ab"))"#,
+            &PathAsContents
+        ),
+        [0x46, 0x0F, 0x01, 0x00, 0x00, 0x00, b'a', b'b']
+    );
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [ShowFrame, VideoFrame(stream: 1, frame: 0, data: File("a.bin"))])"#
+        )
+        .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    );
+}
+
+#[test]
+fn video_frame_errors() {
+    let err =
+        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [VideoFrame({fields})])"));
+    assert!(
+        err(r#"frame: 0, data: InlineBytes("")"#)
+            .contains("Unexpected missing field named `stream` in `VideoFrame`")
+    );
+    assert!(
+        err(r#"stream: 1, data: InlineBytes("")"#)
+            .contains("Unexpected missing field named `frame` in `VideoFrame`")
+    );
+    assert!(
+        err("stream: 1, frame: 0")
+            .contains("Unexpected missing field named `data` in `VideoFrame`")
+    );
+    assert!(
+        err(r#"stream: 1, frame_num: 0, data: InlineBytes("")"#)
+            .contains("Unexpected field named `frame_num` in `VideoFrame`")
+    );
+    assert!(
+        err(r#"stream: 0x10000, frame: 0, data: InlineBytes("")"#)
+            .contains("Integer is out of bounds")
+    );
+    assert!(
+        err(r#"stream: 1, frame: -1, data: InlineBytes("")"#).contains("Integer is out of bounds")
+    );
+    assert!(err(r#"stream: 1, frame: 0, data: InlineBytes("0")"#).contains("odd number of digits"));
+}
+
+#[test]
 fn script_limits() {
     assert_eq!(
         compile_tags!("ScriptLimits(max_recursion_depth: 0x1234, timeout_seconds: 0x5678)"),
