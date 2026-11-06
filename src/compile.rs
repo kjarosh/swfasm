@@ -3,6 +3,7 @@
 mod button;
 mod matrix;
 mod place_object;
+mod video;
 
 use crate::files::FileProvider;
 use crate::source::{Data, Swf, Tag};
@@ -318,6 +319,9 @@ fn write_tag(
                 id: *sprite,
                 action_data: &data,
             }
+        }
+        Tag::DefineVideoStream(stream) => {
+            swf::Tag::DefineVideoStream(video::convert_define_video_stream(stream))
         }
         Tag::ScriptLimits {
             max_recursion_depth,
