@@ -1809,6 +1809,203 @@ fn do_init_action_errors() {
 }
 
 #[test]
+fn define_video_stream() {
+    // The body is the character ID, the frame count, the width, the height,
+    // the flags and the codec.
+    assert_eq!(
+        compile_tags!(
+            "DefineVideoStream(
+                id: 0x1234,
+                num_frames: 0x5678,
+                width: 0x9ABC,
+                height: 0xDEF0,
+                codec: H263,
+            )"
+        ),
+        [
+            0x0A, 0x0F, // header: code 60, length 10
+            0x34, 0x12, // ID
+            0x78, 0x56, // frame count
+            0xBC, 0x9A, // width
+            0xF0, 0xDE, // height
+            0x00, // flags: no smoothing, the deblocking of the video packets
+            0x02, // codec: H263
+        ]
+    );
+    // The frame count doesn't have to match the number of `VideoFrame` tags, of
+    // which there are none here.
+    assert_eq!(
+        compile_tags!(
+            "DefineVideoStream(
+                id: 1,
+                num_frames: 0xFFFF,
+                width: 0,
+                height: 0,
+                smoothing: true,
+                deblocking: Level4,
+                codec: H264,
+            )"
+        ),
+        [
+            0x0A, 0x0F, // header: code 60, length 10
+            0x01, 0x00, // ID
+            0xFF, 0xFF, // frame count
+            0x00, 0x00, // width
+            0x00, 0x00, // height
+            0x0B, // flags: smoothing, deblocking level 4
+            0x07, // codec: H264
+        ]
+    );
+    // The tag is written in SWFs older than SWF 6, which introduced it.
+    assert_eq!(
+        compile_tags!(
+            "DefineVideoStream(id: 1, num_frames: 1, width: 320, height: 240, codec: H263)",
+            version: 1
+        ),
+        [
+            0x0A, 0x0F, // header: code 60, length 10
+            0x01, 0x00, // ID
+            0x01, 0x00, // frame count
+            0x40, 0x01, // width: 320
+            0xF0, 0x00, // height: 240
+            0x00, // flags
+            0x02, // codec: H263
+        ]
+    );
+}
+
+#[test]
+fn define_video_stream_flags() {
+    // Smoothing is bit 0 of the flags and deblocking is bits 1 to 3; the other
+    // 4 bits are reserved and written as 0.
+    for (deblocking, value) in [
+        ("UseVideoPacketValue", 0),
+        ("Off", 1),
+        ("Level1", 2),
+        ("Level2", 3),
+        ("Level3", 4),
+        ("Level4", 5),
+    ] {
+        for (smoothing, bit) in [("false", 0), ("true", 1)] {
+            let flags = value << 1 | bit;
+            assert_eq!(
+                compile_tags!(format!(
+                    "DefineVideoStream(
+                        id: 1,
+                        num_frames: 0,
+                        width: 0,
+                        height: 0,
+                        smoothing: {smoothing},
+                        deblocking: {deblocking},
+                        codec: H263,
+                    )"
+                )),
+                [
+                    0x0A, 0x0F, // header: code 60, length 10
+                    0x01, 0x00, // ID
+                    0x00, 0x00, // frame count
+                    0x00, 0x00, // width
+                    0x00, 0x00,  // height
+                    flags, // flags
+                    0x02,  // codec: H263
+                ],
+                "deblocking: {deblocking}, smoothing: {smoothing}"
+            );
+        }
+    }
+}
+
+#[test]
+fn define_video_stream_codecs() {
+    for (codec, id) in [
+        ("None", 0),
+        ("H263", 2),
+        ("ScreenVideo", 3),
+        ("Vp6", 4),
+        ("Vp6WithAlpha", 5),
+        ("ScreenVideoV2", 6),
+        ("H264", 7),
+    ] {
+        assert_eq!(
+            compile_tags!(format!(
+                "DefineVideoStream(
+                    id: 1,
+                    num_frames: 0,
+                    width: 0,
+                    height: 0,
+                    codec: {codec},
+                )"
+            )),
+            [
+                0x0A, 0x0F, // header: code 60, length 10
+                0x01, 0x00, // ID
+                0x00, 0x00, // frame count
+                0x00, 0x00, // width
+                0x00, 0x00, // height
+                0x00, // flags
+                id,   // codec
+            ],
+            "codec: {codec}"
+        );
+    }
+}
+
+#[test]
+fn define_video_stream_errors() {
+    let err = |fields: &str| {
+        compile_err!(format!(
+            "Swf(version: 10, tags: [DefineVideoStream({fields})])"
+        ))
+    };
+    let all_fields = "id: 1, num_frames: 1, width: 1, height: 1, codec: H263";
+    assert!(
+        err("num_frames: 1, width: 1, height: 1, codec: H263")
+            .contains("Unexpected missing field named `id` in `DefineVideoStream`")
+    );
+    assert!(
+        err("id: 1, width: 1, height: 1, codec: H263")
+            .contains("Unexpected missing field named `num_frames` in `DefineVideoStream`")
+    );
+    assert!(
+        err("id: 1, num_frames: 1, height: 1, codec: H263")
+            .contains("Unexpected missing field named `width` in `DefineVideoStream`")
+    );
+    assert!(
+        err("id: 1, num_frames: 1, width: 1, codec: H263")
+            .contains("Unexpected missing field named `height` in `DefineVideoStream`")
+    );
+    assert!(
+        err("id: 1, num_frames: 1, width: 1, height: 1")
+            .contains("Unexpected missing field named `codec` in `DefineVideoStream`")
+    );
+    assert!(
+        err(&format!("{all_fields}, smooth: true"))
+            .contains("Unexpected field named `smooth` in `DefineVideoStream`")
+    );
+    // The codec and the deblocking filter can only be one of the known values.
+    assert!(
+        err("id: 1, num_frames: 1, width: 1, height: 1, codec: H265")
+            .contains("Unexpected variant named `H265` in enum `VideoCodec`")
+    );
+    assert!(
+        err(&format!("{all_fields}, deblocking: Level5"))
+            .contains("Unexpected variant named `Level5` in enum `VideoDeblocking`")
+    );
+    assert!(
+        err("id: 0x10000, num_frames: 1, width: 1, height: 1, codec: H263")
+            .contains("Integer is out of bounds")
+    );
+    assert!(
+        err("id: 1, num_frames: 1, width: -1, height: 1, codec: H263")
+            .contains("Integer is out of bounds")
+    );
+    assert!(
+        err("id: 1, num_frames: 1, width: 1, height: 65536, codec: H263")
+            .contains("Integer is out of bounds")
+    );
+}
+
+#[test]
 fn script_limits() {
     assert_eq!(
         compile_tags!("ScriptLimits(max_recursion_depth: 0x1234, timeout_seconds: 0x5678)"),

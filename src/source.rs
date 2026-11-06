@@ -271,6 +271,12 @@ pub enum Tag {
         actions: Data,
     },
 
+    /// Defines a character that plays a video stream (code 60).
+    ///
+    /// The tag defines only the stream: its frames are written in `VideoFrame`
+    /// tags.
+    DefineVideoStream(DefineVideoStream),
+
     /// Overrides the default limits of ActionScript (code 65).
     ScriptLimits {
         /// The maximum depth of nested function calls (`MaxRecursionDepth`).
@@ -579,6 +585,99 @@ pub enum ButtonState {
 
     /// `ButtonStateHitTest`.
     HitTest = 1 << 3,
+}
+
+/// A video stream, from a `DefineVideoStream` tag.
+///
+/// ```ron
+/// DefineVideoStream(
+///     id: 1,
+///     num_frames: 2,
+///     width: 16,
+///     height: 16,
+///     codec: ScreenVideo,
+/// ),
+/// ```
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DefineVideoStream {
+    /// The character ID.
+    pub id: u16,
+
+    /// The number of video frames (`NumFrames`).
+    pub num_frames: u16,
+
+    /// The width of the video, in pixels.
+    pub width: u16,
+
+    /// The height of the video, in pixels.
+    pub height: u16,
+
+    /// Whether the player smooths the video (`VideoFlagsSmoothing`).
+    ///
+    /// Defaults to false.
+    #[serde(default)]
+    pub smoothing: bool,
+
+    /// The deblocking filter that the player applies to the video
+    /// (`VideoFlagsDeblocking`).
+    ///
+    /// Defaults to `UseVideoPacketValue`.
+    #[serde(default)]
+    pub deblocking: VideoDeblocking,
+
+    /// The codec of the video frames (`CodecID`).
+    pub codec: VideoCodec,
+}
+
+/// The deblocking filter that the player applies to a video stream, from
+/// `VideoFlagsDeblocking` in `DefineVideoStream`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+pub enum VideoDeblocking {
+    /// Use the filter of the video packets (0).
+    #[default]
+    UseVideoPacketValue,
+
+    /// No filter (1).
+    Off,
+
+    /// Level 1, the fastest filter (2).
+    Level1,
+
+    /// Level 2 (3).
+    Level2,
+
+    /// Level 3 (4).
+    Level3,
+
+    /// Level 4, the slowest filter (5).
+    Level4,
+}
+
+/// The codec of the frames of a video stream, from `CodecID` in
+/// `DefineVideoStream`.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub enum VideoCodec {
+    /// No codec (0), which the SWF specification doesn't define.
+    None,
+
+    /// Sorenson H.263 (2).
+    H263,
+
+    /// Screen video (3).
+    ScreenVideo,
+
+    /// On2 VP6 (4).
+    Vp6,
+
+    /// On2 VP6 with an alpha channel (5).
+    Vp6WithAlpha,
+
+    /// Screen video version 2 (6).
+    ScreenVideoV2,
+
+    /// H.264, also known as AVC (7).
+    H264,
 }
 
 /// The label of a frame, from a `FrameLabel` tag.
