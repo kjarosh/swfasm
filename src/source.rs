@@ -277,6 +277,9 @@ pub enum Tag {
     /// tags.
     DefineVideoStream(DefineVideoStream),
 
+    /// A frame of a video stream (code 61).
+    VideoFrame(VideoFrame),
+
     /// Overrides the default limits of ActionScript (code 65).
     ScriptLimits {
         /// The maximum depth of nested function calls (`MaxRecursionDepth`).
@@ -628,6 +631,24 @@ pub struct DefineVideoStream {
 
     /// The codec of the video frames (`CodecID`).
     pub codec: VideoCodec,
+}
+
+/// A frame of a video stream, from a `VideoFrame` tag.
+///
+/// ```ron
+/// VideoFrame(stream: 1, frame: 0, data: File("frame0.bin")),
+/// ```
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VideoFrame {
+    /// The character ID of the video stream (`StreamID`).
+    pub stream: u16,
+
+    /// The number of the frame in the stream (`FrameNum`), counted from 0.
+    pub frame: u16,
+
+    /// The frame, encoded in the codec of the stream.
+    pub data: Data,
 }
 
 /// The deblocking filter that the player applies to a video stream, from
