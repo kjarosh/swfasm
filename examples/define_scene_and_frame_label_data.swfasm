@@ -1,0 +1,24 @@
+// Two scenes and two labeled frames on a timeline of four frames.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+
+        DefineSceneAndFrameLabelData(
+            scenes: [
+                (frame: 0, name: "Intro"),
+                (frame: 2, name: "Loop"),
+            ],
+            frame_labels: [
+                (frame: 0, name: "start"),
+                (frame: 2, name: "again"),
+            ],
+        ),
+
+        ShowFrame,
+        ShowFrame,
+        ShowFrame,
+        ShowFrame,
+        End,
+    ],
+)
