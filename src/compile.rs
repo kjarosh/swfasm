@@ -6,7 +6,7 @@ mod place_object;
 mod video;
 
 use crate::files::FileProvider;
-use crate::source::{Data, GridFit, Swf, Tag};
+use crate::source::{Data, GridFit, Rect, Swf, Tag};
 use anyhow::{Context, Result, anyhow, bail};
 use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
@@ -169,6 +169,29 @@ fn check_sbits(raw: i32, num_bits: u32, value: impl Display) -> Result<()> {
         bail!("{value} is out of range");
     }
     Ok(())
+}
+
+/// Converts a rectangle in pixels into one in twips, failing if an edge is not
+/// representable.
+fn rectangle(rect: &Rect) -> Result<Rectangle<Twips>> {
+    let x_min = twips(rect.x).context("x")?;
+    let y_min = twips(rect.y).context("y")?;
+    let x_max = add_twips(x_min, twips(rect.width).context("width")?).context("width")?;
+    let y_max = add_twips(y_min, twips(rect.height).context("height")?).context("height")?;
+    for (edge, name) in [
+        (x_min, "x"),
+        (x_max, "width"),
+        (y_min, "y"),
+        (y_max, "height"),
+    ] {
+        check_sbits(edge.get(), 31, format!("{}px", edge.to_pixels())).context(name)?;
+    }
+    Ok(Rectangle {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    })
 }
 
 /// Returns the explicit frame count, or else the number of `ShowFrame` tags.
@@ -429,6 +452,13 @@ fn write_tag(
                 .collect::<Result<_>>()?;
             swf::Tag::SymbolClass(links)
         }
+        Tag::DefineScalingGrid {
+            character,
+            splitter,
+        } => swf::Tag::DefineScalingGrid {
+            id: *character,
+            splitter_rect: rectangle(splitter).context("splitter")?,
+        },
         Tag::DoAbc2 {
             lazy_initialize,
             name,
