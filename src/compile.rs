@@ -6,16 +6,17 @@ mod place_object;
 mod video;
 
 use crate::files::FileProvider;
-use crate::source::{Data, GridFit, Rect, Swf, Tag};
+use crate::source::{Data, GridFit, NamedFrame, Rect, Swf, Tag};
 use anyhow::{Context, Result, anyhow, bail};
 use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
 use std::fmt::Display;
 use swf::{
-    Color, CsmTextSettings, DefineBinaryData, DoAbc2, DoAbc2Flag, ExportedAsset, FileAttributes,
-    Fixed8, Fixed16, FrameLabel, Header, NameCharacter, ProductInfo, Rectangle, RemoveObject,
-    SwfStr, SymbolClassLink, TagCode, TextGridFit, Twips,
+    Color, CsmTextSettings, DefineBinaryData, DefineSceneAndFrameLabelData, DoAbc2, DoAbc2Flag,
+    ExportedAsset, FileAttributes, Fixed8, Fixed16, FrameLabel, FrameLabelData, Header,
+    NameCharacter, ProductInfo, Rectangle, RemoveObject, SwfStr, SymbolClassLink, TagCode,
+    TextGridFit, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -169,6 +170,21 @@ fn check_sbits(raw: i32, num_bits: u32, value: impl Display) -> Result<()> {
         bail!("{value} is out of range");
     }
     Ok(())
+}
+
+/// Converts named frames for the swf crate.
+fn frame_label_data(frames: &[NamedFrame]) -> Result<Vec<FrameLabelData<'_>>> {
+    frames
+        .iter()
+        .enumerate()
+        .map(|(i, frame)| {
+            Ok(FrameLabelData {
+                frame_num: frame.frame,
+                label: null_terminated_str(&frame.name)
+                    .with_context(|| format!("frame #{i}: name"))?,
+            })
+        })
+        .collect()
 }
 
 /// Converts a rectangle in pixels into one in twips, failing if an edge is not
@@ -474,6 +490,13 @@ fn write_tag(
                 data: &data,
             })
         }
+        Tag::DefineSceneAndFrameLabelData {
+            scenes,
+            frame_labels,
+        } => swf::Tag::DefineSceneAndFrameLabelData(DefineSceneAndFrameLabelData {
+            scenes: frame_label_data(scenes).context("scenes")?,
+            frame_labels: frame_label_data(frame_labels).context("frame_labels")?,
+        }),
         Tag::DefineBinaryData {
             id,
             data: binary_data,

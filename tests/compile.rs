@@ -1293,6 +1293,75 @@ fn define_button_errors() {
 }
 
 #[test]
+fn define_scene_and_frame_label_data() {
+    // The body is the count of the scenes and their frames and names, then
+    // the same for the labeled frames.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineSceneAndFrameLabelData(
+                scenes: [(frame: 0, name: "ab"), (frame: 5, name: "c")],
+                frame_labels: [(frame: 7, name: "d")],
+            )"#
+        ),
+        [
+            0x8C, 0x15, // header: code 86, length 12
+            0x02, // two scenes
+            0x00, b'a', b'b', 0x00, // scene #0
+            0x05, b'c', 0x00, // scene #1
+            0x01, // one labeled frame
+            0x07, b'd', 0x00, // frame #0
+        ]
+    );
+    // Both lists default to empty, and the counts are still written.
+    assert_eq!(
+        compile_tags!("DefineSceneAndFrameLabelData()"),
+        [0x82, 0x15, 0x00, 0x00]
+    );
+    // Frame numbers above 127 take more than one byte.
+    assert_eq!(
+        compile_tags!(r#"DefineSceneAndFrameLabelData(scenes: [(frame: 128, name: "")])"#),
+        [
+            0x85, 0x15, // header: code 86, length 5
+            0x01, // one scene
+            0x80, 0x01, 0x00, // scene #0: frame 128, an empty name
+            0x00, // no labeled frames
+        ]
+    );
+}
+
+#[test]
+fn define_scene_and_frame_label_data_errors() {
+    let err = |fields: &str| {
+        compile_err!(format!(
+            "Swf(version: 10, tags: [DefineSceneAndFrameLabelData({fields})])"
+        ))
+    };
+    assert!(
+        err(r#"scenes: [(name: "a")]"#)
+            .contains("Unexpected missing field named `frame` in `NamedFrame`")
+    );
+    assert!(
+        err("scenes: [(frame: 1)]")
+            .contains("Unexpected missing field named `name` in `NamedFrame`")
+    );
+    assert!(
+        err(r#"scenes: [(frame: 1, label: "a")]"#)
+            .contains("Unexpected field named `label` in `NamedFrame`")
+    );
+    assert!(
+        err(r#"scenes: [(frame: 1, name: "a"), (frame: 2, name: "b\0c")]"#)
+            .contains(r#"scenes: frame #1: name: "b\0c" contains a null character"#)
+    );
+    assert!(
+        err(r#"frame_labels: [(frame: 1, name: "a\0b")]"#)
+            .contains(r#"frame_labels: frame #0: name: "a\0b" contains a null character"#)
+    );
+    assert!(
+        err(r#"scenes: [(frame: 4294967296, name: "a")]"#).contains("Integer is out of bounds")
+    );
+}
+
+#[test]
 fn define_binary_data() {
     // The body is the character ID, a reserved 32-bit field and the data.
     assert_eq!(
