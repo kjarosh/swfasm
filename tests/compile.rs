@@ -2587,6 +2587,67 @@ fn do_abc_errors() {
 }
 
 #[test]
+fn csm_text_settings() {
+    // The body is the character ID, the flags, the thickness, the sharpness
+    // and a reserved byte.
+    assert_eq!(
+        compile_tags!(
+            "CsmTextSettings(
+                text: 0x1234,
+                advanced_rendering: true,
+                grid_fit: Pixel,
+                thickness: 1.0,
+                sharpness: -2.5,
+            )"
+        ),
+        [
+            0x8C, 0x12, // header: code 74, length 12
+            0x34, 0x12, // text
+            0x48, // advanced rendering, grid fit 1
+            0x00, 0x00, 0x80, 0x3F, // thickness: 1.0
+            0x00, 0x00, 0x20, 0xC0, // sharpness: -2.5
+            0x00, // reserved
+        ]
+    );
+    assert_eq!(
+        compile_tags!("CsmTextSettings(text: 1)"),
+        [
+            0x8C, 0x12, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]
+    );
+}
+
+#[test]
+fn csm_text_settings_grid_fit() {
+    // Grid fitting is bits 3 to 5 of the flags.
+    for (grid_fit, value) in [("None", 0x00), ("Pixel", 0x08), ("SubPixel", 0x10)] {
+        assert_eq!(
+            compile_tags!(format!("CsmTextSettings(text: 1, grid_fit: {grid_fit})"))[4],
+            value,
+            "grid_fit: {grid_fit}"
+        );
+    }
+}
+
+#[test]
+fn csm_text_settings_errors() {
+    let err = |fields: &str| {
+        compile_err!(format!(
+            "Swf(version: 10, tags: [CsmTextSettings({fields})])"
+        ))
+    };
+    assert!(
+        err("advanced_rendering: true")
+            .contains("Unexpected missing field named `text` in `CsmTextSettings`")
+    );
+    assert!(err("id: 1").contains("Unexpected field named `id` in `CsmTextSettings`"));
+    assert!(
+        err("text: 1, grid_fit: Grid")
+            .contains("Unexpected variant named `Grid` in enum `GridFit`")
+    );
+}
+
+#[test]
 fn symbol_class() {
     // The body is the count, and the character ID and the null-terminated class
     // name of each link.

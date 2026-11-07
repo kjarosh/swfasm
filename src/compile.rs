@@ -6,16 +6,16 @@ mod place_object;
 mod video;
 
 use crate::files::FileProvider;
-use crate::source::{Data, Swf, Tag};
+use crate::source::{Data, GridFit, Swf, Tag};
 use anyhow::{Context, Result, anyhow, bail};
 use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
 use std::fmt::Display;
 use swf::{
-    Color, DefineBinaryData, DoAbc2, DoAbc2Flag, ExportedAsset, FileAttributes, Fixed8, Fixed16,
-    FrameLabel, Header, NameCharacter, ProductInfo, Rectangle, RemoveObject, SwfStr,
-    SymbolClassLink, TagCode, Twips,
+    Color, CsmTextSettings, DefineBinaryData, DoAbc2, DoAbc2Flag, ExportedAsset, FileAttributes,
+    Fixed8, Fixed16, FrameLabel, Header, NameCharacter, ProductInfo, Rectangle, RemoveObject,
+    SwfStr, SymbolClassLink, TagCode, TextGridFit, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -393,6 +393,23 @@ fn write_tag(
             data = read_data(abc, swf_version, files)?;
             swf::Tag::DoAbc(&data)
         }
+        Tag::CsmTextSettings {
+            text,
+            advanced_rendering,
+            grid_fit,
+            thickness,
+            sharpness,
+        } => swf::Tag::CsmTextSettings(CsmTextSettings {
+            id: *text,
+            use_advanced_rendering: *advanced_rendering,
+            grid_fit: match grid_fit {
+                GridFit::None => TextGridFit::None,
+                GridFit::Pixel => TextGridFit::Pixel,
+                GridFit::SubPixel => TextGridFit::SubPixel,
+            },
+            thickness: *thickness,
+            sharpness: *sharpness,
+        }),
         Tag::SymbolClass(links) => {
             // TODO Maybe add support to the swf crate? It silently truncates
             // the count, and can't write a count that doesn't match the links.
