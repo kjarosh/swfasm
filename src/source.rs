@@ -140,6 +140,16 @@ pub enum Tag {
         depth: u16,
     },
 
+    /// Defines a character with a JPEG image whose encoding tables are in a
+    /// `JpegTables` tag (code 6).
+    DefineBits {
+        /// The character ID.
+        id: u16,
+
+        /// The JPEG image, without its encoding tables.
+        data: Data,
+    },
+
     /// Defines a button (code 7).
     DefineButton {
         /// The character ID.
