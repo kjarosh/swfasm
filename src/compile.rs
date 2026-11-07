@@ -14,8 +14,8 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use swf::{
     Color, DefineBinaryData, DoAbc2, DoAbc2Flag, ExportedAsset, FileAttributes, Fixed8, Fixed16,
-    FrameLabel, Header, NameCharacter, Rectangle, RemoveObject, SwfStr, SymbolClassLink, TagCode,
-    Twips,
+    FrameLabel, Header, NameCharacter, ProductInfo, Rectangle, RemoveObject, SwfStr,
+    SymbolClassLink, TagCode, Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -312,6 +312,21 @@ fn write_tag(
         Tag::NameCharacter { character, name } => swf::Tag::NameCharacter(NameCharacter {
             id: *character,
             name: null_terminated_str(name).context("name")?,
+        }),
+        Tag::ProductInfo {
+            product_id,
+            edition,
+            major_version,
+            minor_version,
+            build_number,
+            compilation_date,
+        } => swf::Tag::ProductInfo(ProductInfo {
+            product_id: *product_id,
+            edition: *edition,
+            major_version: *major_version,
+            minor_version: *minor_version,
+            build_number: *build_number,
+            compilation_date: *compilation_date,
         }),
         Tag::FrameLabel(frame_label) => {
             // TODO Maybe add support to the swf crate? It silently drops the
