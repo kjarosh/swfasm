@@ -1,0 +1,23 @@
+// Names given to a sprite and a font.
+Swf(
+    version: 10,
+    tags: [
+        FileAttributes(),
+
+        DefineSprite(id: 1, tags: [ShowFrame, End]),
+        NameCharacter(character: 1, name: "clip"),
+
+        // DefineFont, a font of a single glyph that draws nothing.
+        Raw(code: 10, data: InlineBytes([
+            "02 00", // ID
+            "02 00", // the offset of the only glyph
+            "00 00", // the glyph: no fill or line style bits, end of shape
+        ])),
+        NameCharacter(character: 2, name: "font"),
+        DefineFontName(font: 2, name: "Blank", copyright: "Public domain"),
+
+        PlaceObject2(depth: 1, character: 1),
+        ShowFrame,
+        End,
+    ],
+)
