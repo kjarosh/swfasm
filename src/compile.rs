@@ -231,6 +231,10 @@ fn write_tag(
             data = read_data(metadata, swf_version, files)?;
             swf::Tag::Metadata(null_terminated_bytes(&data)?)
         }
+        Tag::JpegTables(tables) => {
+            data = read_data(tables, swf_version, files)?;
+            swf::Tag::JpegTables(&data)
+        }
         Tag::SetBackgroundColor(rgb) => {
             if *rgb > 0xFFFFFF {
                 bail!("background color {rgb:#x} is not in the 0xRRGGBB format");
