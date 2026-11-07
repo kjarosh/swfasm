@@ -1416,6 +1416,70 @@ fn define_binary_data_errors() {
 }
 
 #[test]
+fn define_bits() {
+    // The body is the character ID and the JPEG data, which is written as is.
+    assert_eq!(
+        compile_tags!(r#"DefineBits(id: 0x1234, data: InlineBytes("ff d8"))"#),
+        [
+            0x84, 0x01, // header: code 6, length 4
+            0x34, 0x12, // ID
+            0xFF, 0xD8, // data
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"DefineBits(id: 1, data: InlineBytes(""))"#),
+        [0x82, 0x01, 0x01, 0x00]
+    );
+    assert_eq!(
+        compile_tags!(r#"DefineBits(id: 1, data: File("ab"))"#, &PathAsContents),
+        [0x84, 0x01, 0x01, 0x00, b'a', b'b']
+    );
+    // The longest data that fits in the short header form, and the shortest
+    // that does not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DefineBits(id: 1, data: InlineBytes("{}"))"#,
+            "00".repeat(60)
+        )),
+        [[0xBE, 0x01, 0x01, 0x00].as_slice(), &[0; 60]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DefineBits(id: 1, data: InlineBytes("{}"))"#,
+            "00".repeat(61)
+        )),
+        [
+            [0xBF, 0x01, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
+            &[0; 61]
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn define_bits_errors() {
+    let err =
+        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [DefineBits({fields})])"));
+    assert!(
+        err(r#"data: InlineBytes("")"#)
+            .contains("Unexpected missing field named `id` in `DefineBits`")
+    );
+    assert!(err("id: 1").contains("Unexpected missing field named `data` in `DefineBits`"));
+    assert!(
+        err(r#"id: 1, jpeg: InlineBytes("")"#)
+            .contains("Unexpected field named `jpeg` in `DefineBits`")
+    );
+    assert!(err(r#"id: 0x10000, data: InlineBytes("")"#).contains("Integer is out of bounds"));
+    assert!(err(r#"id: 1, data: InlineBytes("0")"#).contains("odd number of digits"));
+    assert!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [ShowFrame, DefineBits(id: 1, data: File("a.jpg"))])"#
+        )
+        .contains(r#"tag #1: failed to read file "a.jpg": files are not available"#)
+    );
+}
+
+#[test]
 fn frame_label() {
     // The body is the null-terminated label.
     assert_eq!(

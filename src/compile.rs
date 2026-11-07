@@ -241,6 +241,13 @@ fn write_tag(
             depth: *depth,
             character_id: Some(*character),
         }),
+        Tag::DefineBits { id, data: jpeg } => {
+            data = read_data(jpeg, swf_version, files)?;
+            swf::Tag::DefineBits {
+                id: *id,
+                jpeg_data: &data,
+            }
+        }
         Tag::DefineButton {
             id,
             records,
