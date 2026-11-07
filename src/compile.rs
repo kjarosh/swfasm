@@ -266,6 +266,13 @@ fn write_tag(
             data = read_data(action_data, swf_version, files)?;
             swf::Tag::DoAction(&data)
         }
+        Tag::DefineBitsJpeg2 { id, data: jpeg } => {
+            data = read_data(jpeg, swf_version, files)?;
+            swf::Tag::DefineBitsJpeg2 {
+                id: *id,
+                jpeg_data: &data,
+            }
+        }
         Tag::RemoveObject2 { depth } => swf::Tag::RemoveObject(RemoveObject {
             depth: *depth,
             character_id: None,
