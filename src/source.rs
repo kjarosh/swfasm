@@ -482,6 +482,21 @@ pub enum Tag {
         data: Data,
     },
 
+    /// Names the scenes and the labeled frames of the main timeline
+    /// (code 86).
+    ///
+    /// Both lists default to empty, and their counts are written as encoded
+    /// 32-bit numbers.
+    DefineSceneAndFrameLabelData {
+        /// The scenes, each starting at its frame.
+        #[serde(default)]
+        scenes: Vec<NamedFrame>,
+
+        /// The labeled frames.
+        #[serde(default)]
+        frame_labels: Vec<NamedFrame>,
+    },
+
     /// Defines a character holding arbitrary binary data (code 87).
     DefineBinaryData {
         /// The character ID.
@@ -965,6 +980,19 @@ pub enum GridFit {
 
     /// Fit to sub-pixels (2).
     SubPixel,
+}
+
+/// A named frame, in `DefineSceneAndFrameLabelData`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NamedFrame {
+    /// The number of the frame, counted from 0.
+    pub frame: u32,
+
+    /// The name, written as UTF-8.
+    ///
+    /// It must not contain null characters.
+    pub name: String,
 }
 
 /// A character with the name of a class, in `SymbolClass`.
