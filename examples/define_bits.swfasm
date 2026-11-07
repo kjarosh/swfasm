@@ -1,0 +1,39 @@
+// The same JPEG as two characters: one whose encoding tables live in a
+// JpegTables tag, and one that carries its own tables.
+Swf(
+    version: 10,
+    stage: (width: 240, height: 140),
+    tags: [
+        FileAttributes(),
+
+        // The tables, shared by every DefineBits character of the SWF.
+        JpegTables(File("define_bits_tables.bin")),
+
+        // A 64x64 pixel image, as a JPEG stripped of the tables above, and as
+        // a complete JPEG.
+        DefineBits(id: 1, data: File("define_bits_image.bin")),
+        DefineBitsJpeg2(id: 2, data: File("define_bits.jpg")),
+
+        // The characters are exported under names, so that ActionScript can
+        // attach them to movie clips.
+        ExportAssets([
+            (character: 1, name: "split"),
+            (character: 2, name: "whole"),
+        ]),
+
+        DoAction(Rascal(r#"
+            this.createEmptyMovieClip("left", 1);
+            left._x = 20;
+            left._y = 38;
+            left.attachBitmap(flash.display.BitmapData.loadBitmap("split"), 1);
+
+            this.createEmptyMovieClip("right", 2);
+            right._x = 156;
+            right._y = 38;
+            right.attachBitmap(flash.display.BitmapData.loadBitmap("whole"), 1);
+        "#)),
+
+        ShowFrame,
+        End,
+    ],
+)
