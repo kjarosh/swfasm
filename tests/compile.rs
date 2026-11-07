@@ -1662,6 +1662,51 @@ fn name_character_errors() {
 }
 
 #[test]
+fn product_info() {
+    assert_eq!(
+        compile_tags!(
+            "ProductInfo(
+                product_id: 0x01020304,
+                edition: 0x05060708,
+                major_version: 0x09,
+                minor_version: 0x0A,
+                build_number: 0x0B0C0D0E0F101112,
+                compilation_date: 0x131415161718191A,
+            )"
+        ),
+        [
+            0x5A, 0x0A, // header: code 41, length 26
+            0x04, 0x03, 0x02, 0x01, // product ID
+            0x08, 0x07, 0x06, 0x05, // edition
+            0x09, // major version
+            0x0A, // minor version
+            0x12, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, // build number
+            0x1A, 0x19, 0x18, 0x17, 0x16, 0x15, 0x14, 0x13, // compilation date
+        ]
+    );
+}
+
+#[test]
+fn product_info_errors() {
+    let err =
+        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [ProductInfo({fields})])"));
+    let all_fields = "product_id: 1, edition: 2, major_version: 3, minor_version: 4, \
+                      build_number: 5, compilation_date: 6";
+    assert!(
+        err("edition: 2, major_version: 3, minor_version: 4, build_number: 5, compilation_date: 6")
+            .contains("Unexpected missing field named `product_id` in `ProductInfo`")
+    );
+    assert!(
+        err(&format!("{all_fields}, version: 7"))
+            .contains("Unexpected field named `version` in `ProductInfo`")
+    );
+    assert!(
+        err("product_id: 1, edition: 2, major_version: 256, minor_version: 4, build_number: 5, compilation_date: 6")
+            .contains("Integer is out of bounds")
+    );
+}
+
+#[test]
 fn frame_label() {
     // The body is the null-terminated label.
     assert_eq!(

@@ -291,6 +291,29 @@ pub enum Tag {
         name: String,
     },
 
+    /// Describes the tool that wrote the SWF (code 41).
+    ///
+    /// The SWF specification doesn't document the tag.
+    ProductInfo {
+        /// `ProductID`.
+        product_id: u32,
+
+        /// `Edition`.
+        edition: u32,
+
+        /// `MajorVersion`.
+        major_version: u8,
+
+        /// `MinorVersion`.
+        minor_version: u8,
+
+        /// `BuildNumber`.
+        build_number: u64,
+
+        /// `CompilationDate`.
+        compilation_date: u64,
+    },
+
     /// Gives the current frame a label (code 43).
     FrameLabel(FrameLabel),
 
