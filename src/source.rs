@@ -412,6 +412,23 @@ pub enum Tag {
         data: Data,
     },
 
+    /// Gives a font character its name and copyright notice (code 88).
+    DefineFontName {
+        /// The character ID of the font.
+        font: u16,
+
+        /// The name of the font, written as UTF-8.
+        ///
+        /// It must not contain null characters.
+        name: String,
+
+        /// The copyright notice, written as UTF-8.
+        ///
+        /// It must not contain null characters. Defaults to an empty notice.
+        #[serde(default)]
+        copyright: String,
+    },
+
     /// A tag with an arbitrary code and body.
     ///
     /// The body is written as is, with the short (2 byte) header form when it
