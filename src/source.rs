@@ -405,6 +405,37 @@ pub enum Tag {
     /// An ABC file (code 72).
     DoAbc(Data),
 
+    /// Sets how the player renders a text character (code 74).
+    CsmTextSettings {
+        /// The character ID of the text.
+        text: u16,
+
+        /// Whether the player uses the advanced text rendering engine
+        /// (`UseFlashType`).
+        ///
+        /// Defaults to false.
+        #[serde(default)]
+        advanced_rendering: bool,
+
+        /// How the player fits glyphs to the pixel grid (`GridFit`).
+        ///
+        /// Defaults to `None`.
+        #[serde(default)]
+        grid_fit: GridFit,
+
+        /// `Thickness`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        thickness: f32,
+
+        /// `Sharpness`.
+        ///
+        /// Defaults to 0.
+        #[serde(default)]
+        sharpness: f32,
+    },
+
     /// Character IDs with the names of classes (code 76).
     ///
     /// The count of links is stored in 16 bits, so more than 65535 links are an
@@ -883,6 +914,21 @@ pub struct ExportedAsset {
     ///
     /// It must not contain null characters.
     pub name: String,
+}
+
+/// How the player fits glyphs to the pixel grid, from `GridFit` in
+/// `CsmTextSettings`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+pub enum GridFit {
+    /// No fitting (0).
+    #[default]
+    None,
+
+    /// Fit to whole pixels (1).
+    Pixel,
+
+    /// Fit to sub-pixels (2).
+    SubPixel,
 }
 
 /// A character with the name of a class, in `SymbolClass`.
