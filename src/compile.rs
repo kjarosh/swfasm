@@ -7,7 +7,7 @@ mod video;
 
 use crate::files::FileProvider;
 use crate::source::{Data, Swf, Tag};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
@@ -379,6 +379,12 @@ fn write_tag(
             max_recursion_depth: *max_recursion_depth,
             timeout_in_seconds: *timeout_seconds,
         },
+        Tag::DebugId(debug_id) => {
+            data = read_data(debug_id, swf_version, files)?;
+            let debug_id = <[u8; 16]>::try_from(&data[..])
+                .map_err(|_| anyhow!("expected 16 bytes, got {}", data.len()))?;
+            swf::Tag::DebugId(debug_id)
+        }
         Tag::SetTabIndex { depth, tab_index } => swf::Tag::SetTabIndex {
             depth: *depth,
             tab_index: *tab_index,
