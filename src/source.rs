@@ -179,6 +179,16 @@ pub enum Tag {
     /// The data is AVM1 bytecode.
     DoAction(Data),
 
+    /// Defines a character with a JPEG image that carries its own encoding
+    /// tables (code 21).
+    DefineBitsJpeg2 {
+        /// The character ID.
+        id: u16,
+
+        /// The JPEG image, with its encoding tables.
+        data: Data,
+    },
+
     /// Places a character on the display list, or modifies one placed earlier
     /// (code 26).
     ///

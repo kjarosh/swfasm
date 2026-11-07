@@ -1457,6 +1457,69 @@ fn define_bits() {
 }
 
 #[test]
+fn define_bits_jpeg_2() {
+    // The body is the character ID and the JPEG data, which is written as is.
+    assert_eq!(
+        compile_tags!(r#"DefineBitsJpeg2(id: 0x1234, data: InlineBytes("ff d8"))"#),
+        [
+            0x44, 0x05, // header: code 21, length 4
+            0x34, 0x12, // ID
+            0xFF, 0xD8, // data
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"DefineBitsJpeg2(id: 1, data: InlineBytes(""))"#),
+        [0x42, 0x05, 0x01, 0x00]
+    );
+    assert_eq!(
+        compile_tags!(
+            r#"DefineBitsJpeg2(id: 1, data: File("ab"))"#,
+            &PathAsContents
+        ),
+        [0x44, 0x05, 0x01, 0x00, b'a', b'b']
+    );
+    // The longest data that fits in the short header form, and the shortest
+    // that does not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DefineBitsJpeg2(id: 1, data: InlineBytes("{}"))"#,
+            "00".repeat(60)
+        )),
+        [[0x7E, 0x05, 0x01, 0x00].as_slice(), &[0; 60]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"DefineBitsJpeg2(id: 1, data: InlineBytes("{}"))"#,
+            "00".repeat(61)
+        )),
+        [
+            [0x7F, 0x05, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
+            &[0; 61]
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn define_bits_jpeg_2_errors() {
+    let err = |fields: &str| {
+        compile_err!(format!(
+            "Swf(version: 10, tags: [DefineBitsJpeg2({fields})])"
+        ))
+    };
+    assert!(
+        err(r#"data: InlineBytes("")"#)
+            .contains("Unexpected missing field named `id` in `DefineBitsJpeg2`")
+    );
+    assert!(err("id: 1").contains("Unexpected missing field named `data` in `DefineBitsJpeg2`"));
+    assert!(
+        err(r#"id: 1, jpeg: InlineBytes("")"#)
+            .contains("Unexpected field named `jpeg` in `DefineBitsJpeg2`")
+    );
+    assert!(err(r#"id: -1, data: InlineBytes("")"#).contains("Integer is out of bounds"));
+}
+
+#[test]
 fn jpeg_tables() {
     // The body is the tables, written as is.
     assert_eq!(
