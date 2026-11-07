@@ -164,6 +164,10 @@ pub enum Tag {
         actions: Data,
     },
 
+    /// The JPEG encoding tables shared by the images of the `DefineBits`
+    /// characters (code 8).
+    JpegTables(Data),
+
     /// Sets the background color of the stage (code 9).
     ///
     /// The color is in the `0xRRGGBB` format, so it must be at most

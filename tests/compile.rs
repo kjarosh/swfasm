@@ -1457,6 +1457,59 @@ fn define_bits() {
 }
 
 #[test]
+fn jpeg_tables() {
+    // The body is the tables, written as is.
+    assert_eq!(
+        compile_tags!(r#"JpegTables(InlineBytes("ff d8 ff d9"))"#),
+        [
+            0x04, 0x02, // header: code 8, length 4
+            0xFF, 0xD8, 0xFF, 0xD9, // tables
+        ]
+    );
+    // The tag is written even with no tables at all.
+    assert_eq!(
+        compile_tags!(r#"JpegTables(InlineBytes(""))"#),
+        [0x00, 0x02]
+    );
+    assert_eq!(
+        compile_tags!(r#"JpegTables(File("ab"))"#, &PathAsContents),
+        [0x02, 0x02, b'a', b'b']
+    );
+    // The longest tables that fit in the short header form, and the shortest
+    // that do not.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"JpegTables(InlineBytes("{}"))"#,
+            "00".repeat(62)
+        )),
+        [[0x3E, 0x02].as_slice(), &[0; 62]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"JpegTables(InlineBytes("{}"))"#,
+            "00".repeat(63)
+        )),
+        [[0x3F, 0x02, 63, 0x00, 0x00, 0x00].as_slice(), &[0; 63]].concat()
+    );
+}
+
+#[test]
+fn jpeg_tables_errors() {
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [JpegTables("ff d8")])"#)
+            .contains("Expected identifier")
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [JpegTables(InlineBytes("f"))])"#)
+            .contains("odd number of digits")
+    );
+    assert!(
+        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, JpegTables(File("a.bin"))])"#)
+            .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    );
+}
+
+#[test]
 fn define_bits_errors() {
     let err =
         |fields: &str| compile_err!(format!("Swf(version: 10, tags: [DefineBits({fields})])"));
