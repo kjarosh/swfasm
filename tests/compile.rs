@@ -2409,6 +2409,36 @@ fn video_frame_errors() {
 }
 
 #[test]
+fn debug_id() {
+    assert_eq!(
+        compile_tags!(r#"DebugId(InlineBytes("000102030405060708090a0b0c0d0e0f"))"#),
+        [
+            [0xD0, 0x0F].as_slice(), // header: code 63, length 16
+            &[
+                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+                0x0E, 0x0F,
+            ],
+        ]
+        .concat()
+    );
+    assert_eq!(
+        compile_tags!(r#"DebugId(File("0123456789abcdef"))"#, &PathAsContents),
+        [[0xD0, 0x0F].as_slice(), b"0123456789abcdef"].concat()
+    );
+}
+
+#[test]
+fn debug_id_errors() {
+    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [{tag}])"));
+    assert!(err(r#"DebugId(InlineBytes("00"))"#).contains("expected 16 bytes, got 1"));
+    assert!(
+        err(r#"DebugId(InlineBytes("000102030405060708090a0b0c0d0e0f10"))"#)
+            .contains("expected 16 bytes, got 17")
+    );
+    assert!(err(r#"DebugId(InlineBytes(""))"#).contains("expected 16 bytes, got 0"));
+}
+
+#[test]
 fn set_tab_index() {
     assert_eq!(
         compile_tags!("SetTabIndex(depth: 0x1234, tab_index: 0x5678)"),

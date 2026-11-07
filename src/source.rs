@@ -361,6 +361,12 @@ pub enum Tag {
         timeout_seconds: u16,
     },
 
+    /// Identifies the SWF for a debugger (code 63).
+    ///
+    /// The SWF specification doesn't document the tag. The data must be
+    /// exactly 16 bytes.
+    DebugId(Data),
+
     /// Sets the tab order of the character at a depth (code 66).
     SetTabIndex {
         /// The depth of the character.
