@@ -189,6 +189,16 @@ pub enum Tag {
         data: Data,
     },
 
+    /// Marks the SWF as not importable for editing (code 24).
+    Protect {
+        /// The MD5 hash of the password, written as UTF-8.
+        ///
+        /// It must not contain null characters. Without it, the tag has an
+        /// empty body.
+        #[serde(default)]
+        password: Option<String>,
+    },
+
     /// Places a character on the display list, or modifies one placed earlier
     /// (code 26).
     ///

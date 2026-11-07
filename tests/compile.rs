@@ -1596,6 +1596,32 @@ fn define_bits_errors() {
 }
 
 #[test]
+fn protect() {
+    // Without a password, the body is empty.
+    assert_eq!(compile_tags!("Protect()"), [0x00, 0x06]);
+    // With one, it is two reserved bytes and the null-terminated hash.
+    assert_eq!(
+        compile_tags!(r#"Protect(password: "ab")"#),
+        [
+            0x05, 0x06, // header: code 24, length 5
+            0x00, 0x00, // reserved
+            b'a', b'b', 0x00, // password
+        ]
+    );
+    assert_eq!(
+        compile_tags!(r#"Protect(password: "")"#),
+        [0x03, 0x06, 0x00, 0x00, 0x00]
+    );
+}
+
+#[test]
+fn protect_errors() {
+    let err = |fields: &str| compile_err!(format!("Swf(version: 10, tags: [Protect({fields})])"));
+    assert!(err(r#"md5: "a""#).contains("Unexpected field named `md5` in `Protect`"));
+    assert!(err(r#"password: "a\0b""#).contains(r#"password: "a\0b" contains a null character"#));
+}
+
+#[test]
 fn name_character() {
     // The body is the character ID and the null-terminated name.
     assert_eq!(
