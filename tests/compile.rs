@@ -2812,6 +2812,51 @@ fn do_abc_2_errors() {
 }
 
 #[test]
+fn define_font_name() {
+    // The body is the character ID of the font, the null-terminated name and
+    // the null-terminated copyright notice.
+    assert_eq!(
+        compile_tags!(r#"DefineFontName(font: 0x1234, name: "ab", copyright: "c")"#),
+        [
+            0x07, 0x16, // header: code 88, length 7
+            0x34, 0x12, // font
+            b'a', b'b', 0x00, // name
+            b'c', 0x00, // copyright
+        ]
+    );
+    // The copyright notice defaults to an empty string, which is still
+    // written.
+    assert_eq!(
+        compile_tags!(r#"DefineFontName(font: 1, name: "a")"#),
+        [0x05, 0x16, 0x01, 0x00, b'a', 0x00, 0x00]
+    );
+    // Both strings are written as UTF-8.
+    assert_eq!(
+        compile_tags!(r#"DefineFontName(font: 1, name: "ż", copyright: "ó")"#),
+        [0x08, 0x16, 0x01, 0x00, 0xC5, 0xBC, 0x00, 0xC3, 0xB3, 0x00]
+    );
+}
+
+#[test]
+fn define_font_name_errors() {
+    let err = |fields: &str| {
+        compile_err!(format!(
+            "Swf(version: 10, tags: [DefineFontName({fields})])"
+        ))
+    };
+    assert!(
+        err(r#"name: "a""#).contains("Unexpected missing field named `font` in `DefineFontName`")
+    );
+    assert!(err("font: 1").contains("Unexpected missing field named `name` in `DefineFontName`"));
+    assert!(err(r#"id: 1, name: "a""#).contains("Unexpected field named `id` in `DefineFontName`"));
+    assert!(err(r#"font: 1, name: "a\0b""#).contains(r#"name: "a\0b" contains a null character"#));
+    assert!(
+        err(r#"font: 1, name: "a", copyright: "b\0c""#)
+            .contains(r#"copyright: "b\0c" contains a null character"#)
+    );
+}
+
+#[test]
 fn rascal_syntax() {
     let parse = |data: &str| -> Result<Data, String> {
         let swf = swfasm::parse(&format!("Swf(version: 10, tags: [DoAction({data})])"))

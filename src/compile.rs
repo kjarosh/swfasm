@@ -409,6 +409,15 @@ fn write_tag(
                 data: &data,
             })
         }
+        Tag::DefineFontName {
+            font,
+            name,
+            copyright,
+        } => swf::Tag::DefineFontName {
+            id: *font,
+            name: null_terminated_str(name).context("name")?,
+            copyright_info: null_terminated_str(copyright).context("copyright")?,
+        },
         Tag::Raw {
             code,
             data: body,
