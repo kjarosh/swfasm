@@ -1596,6 +1596,46 @@ fn define_bits_errors() {
 }
 
 #[test]
+fn name_character() {
+    // The body is the character ID and the null-terminated name.
+    assert_eq!(
+        compile_tags!(r#"NameCharacter(character: 0x1234, name: "ab")"#),
+        [
+            0x05, 0x0A, // header: code 40, length 5
+            0x34, 0x12, // character
+            b'a', b'b', 0x00, // name
+        ]
+    );
+    // The name is written as UTF-8, and can be empty.
+    assert_eq!(
+        compile_tags!(r#"NameCharacter(character: 1, name: "ż")"#),
+        [0x05, 0x0A, 0x01, 0x00, 0xC5, 0xBC, 0x00]
+    );
+    assert_eq!(
+        compile_tags!(r#"NameCharacter(character: 0xFFFF, name: "")"#),
+        [0x03, 0x0A, 0xFF, 0xFF, 0x00]
+    );
+}
+
+#[test]
+fn name_character_errors() {
+    let err =
+        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [NameCharacter({fields})])"));
+    assert!(
+        err(r#"name: "a""#)
+            .contains("Unexpected missing field named `character` in `NameCharacter`")
+    );
+    assert!(
+        err("character: 1").contains("Unexpected missing field named `name` in `NameCharacter`")
+    );
+    assert!(err(r#"id: 1, name: "a""#).contains("Unexpected field named `id` in `NameCharacter`"));
+    assert!(err(r#"character: 0x10000, name: "a""#).contains("Integer is out of bounds"));
+    assert!(
+        err(r#"character: 1, name: "a\0b""#).contains(r#"name: "a\0b" contains a null character"#)
+    );
+}
+
+#[test]
 fn frame_label() {
     // The body is the null-terminated label.
     assert_eq!(

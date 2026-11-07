@@ -267,6 +267,20 @@ pub enum Tag {
         tags: Vec<Tag>,
     },
 
+    /// Gives a character a name (code 40).
+    ///
+    /// The SWF specification doesn't document the tag, and players appear to
+    /// ignore it.
+    NameCharacter {
+        /// The ID of the character to name.
+        character: u16,
+
+        /// The name, written as UTF-8.
+        ///
+        /// It must not contain null characters.
+        name: String,
+    },
+
     /// Gives the current frame a label (code 43).
     FrameLabel(FrameLabel),
 

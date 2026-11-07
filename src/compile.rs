@@ -14,7 +14,8 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use swf::{
     Color, DefineBinaryData, DoAbc2, DoAbc2Flag, ExportedAsset, FileAttributes, Fixed8, Fixed16,
-    FrameLabel, Header, Rectangle, RemoveObject, SwfStr, SymbolClassLink, TagCode, Twips,
+    FrameLabel, Header, NameCharacter, Rectangle, RemoveObject, SwfStr, SymbolClassLink, TagCode,
+    Twips,
 };
 
 /// Parses the textual representation of a SWF file.
@@ -301,6 +302,10 @@ fn write_tag(
             )?;
             return Ok(());
         }
+        Tag::NameCharacter { character, name } => swf::Tag::NameCharacter(NameCharacter {
+            id: *character,
+            name: null_terminated_str(name).context("name")?,
+        }),
         Tag::FrameLabel(frame_label) => {
             // TODO Maybe add support to the swf crate? It silently drops the
             // anchor flag before SWF 6, and can only write it as 1.
