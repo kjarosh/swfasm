@@ -274,6 +274,13 @@ fn write_tag(
                 jpeg_data: &data,
             }
         }
+        Tag::Protect { password } => swf::Tag::Protect(
+            password
+                .as_deref()
+                .map(null_terminated_str)
+                .transpose()
+                .context("password")?,
+        ),
         Tag::RemoveObject2 { depth } => swf::Tag::RemoveObject(RemoveObject {
             depth: *depth,
             character_id: None,
