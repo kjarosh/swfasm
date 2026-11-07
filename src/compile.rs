@@ -357,6 +357,10 @@ fn write_tag(
             max_recursion_depth: *max_recursion_depth,
             timeout_in_seconds: *timeout_seconds,
         },
+        Tag::SetTabIndex { depth, tab_index } => swf::Tag::SetTabIndex {
+            depth: *depth,
+            tab_index: *tab_index,
+        },
         Tag::DoAbc(abc) => {
             data = read_data(abc, swf_version, files)?;
             swf::Tag::DoAbc(&data)

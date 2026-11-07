@@ -328,6 +328,15 @@ pub enum Tag {
         timeout_seconds: u16,
     },
 
+    /// Sets the tab order of the character at a depth (code 66).
+    SetTabIndex {
+        /// The depth of the character.
+        depth: u16,
+
+        /// The position of the character in the tab order (`TabIndex`).
+        tab_index: u16,
+    },
+
     /// Describes the SWF to the player (code 69).
     ///
     /// All flags default to false.
