@@ -2338,6 +2338,37 @@ fn video_frame_errors() {
 }
 
 #[test]
+fn set_tab_index() {
+    assert_eq!(
+        compile_tags!("SetTabIndex(depth: 0x1234, tab_index: 0x5678)"),
+        [
+            0x84, 0x10, // header: code 66, length 4
+            0x34, 0x12, // depth
+            0x78, 0x56, // tab index
+        ]
+    );
+    // The depth doesn't have to hold a character.
+    assert_eq!(
+        compile_tags!("SetTabIndex(depth: 0, tab_index: 0xFFFF)"),
+        [0x84, 0x10, 0x00, 0x00, 0xFF, 0xFF]
+    );
+}
+
+#[test]
+fn set_tab_index_errors() {
+    let err =
+        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [SetTabIndex({fields})])"));
+    assert!(
+        err("tab_index: 1").contains("Unexpected missing field named `depth` in `SetTabIndex`")
+    );
+    assert!(
+        err("depth: 1").contains("Unexpected missing field named `tab_index` in `SetTabIndex`")
+    );
+    assert!(err("depth: 1, index: 1").contains("Unexpected field named `index` in `SetTabIndex`"));
+    assert!(err("depth: 1, tab_index: 65536").contains("Integer is out of bounds"));
+}
+
+#[test]
 fn script_limits() {
     assert_eq!(
         compile_tags!("ScriptLimits(max_recursion_depth: 0x1234, timeout_seconds: 0x5678)"),
