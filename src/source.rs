@@ -455,6 +455,15 @@ pub enum Tag {
     /// null bytes.
     Metadata(Data),
 
+    /// Sets the scaling grid that a character is sliced into (code 78).
+    DefineScalingGrid {
+        /// The character ID.
+        character: u16,
+
+        /// The center of the scaling grid.
+        splitter: Rect,
+    },
+
     /// An ABC file with a name and flags (code 82).
     DoAbc2 {
         /// The `kDoAbcLazyInitializeFlag` flag (bit 0).
@@ -529,6 +538,33 @@ impl Tag {
             _ => false,
         }
     }
+}
+
+/// A rectangle, in pixels.
+///
+/// Like the stage, it is stored in twips (1/20 of a pixel), so all values must
+/// be multiples of 0.05, and its edges are stored as 31-bit signed numbers of
+/// twips. Values that are not representable are an error.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rect {
+    /// The left edge.
+    ///
+    /// Defaults to 0.
+    #[serde(default)]
+    pub x: f64,
+
+    /// The top edge.
+    ///
+    /// Defaults to 0.
+    #[serde(default)]
+    pub y: f64,
+
+    /// The width, which is added to `x` to get the right edge.
+    pub width: f64,
+
+    /// The height, which is added to `y` to get the bottom edge.
+    pub height: f64,
 }
 
 /// A transformation matrix (`MATRIX`), which transforms a point `(x, y)` into

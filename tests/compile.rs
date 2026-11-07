@@ -2857,6 +2857,64 @@ fn metadata_errors() {
 }
 
 #[test]
+fn define_scaling_grid() {
+    // The body is the character ID and the rectangle, in twips.
+    assert_eq!(
+        compile_tags!(
+            "DefineScalingGrid(character: 0x1234, splitter: (x: 10, y: 10, width: 80, height: 20))"
+        ),
+        [
+            0x89, 0x13, // header: code 78, length 9
+            0x34, 0x12, // character
+            0x60, 0x64, 0x38, 0x40, 0x64, 0x12, 0xC0, // 200..1800, 200..600 twips
+        ]
+    );
+    // x and y default to 0.
+    assert_eq!(
+        compile_tags!("DefineScalingGrid(character: 1, splitter: (width: 0, height: 0))"),
+        [
+            0x83, 0x13, // header: code 78, length 3
+            0x01, 0x00, // character
+            0x00, // an empty rectangle: no bits per edge
+        ]
+    );
+}
+
+#[test]
+fn define_scaling_grid_errors() {
+    let err = |fields: &str| {
+        compile_err!(format!(
+            "Swf(version: 10, tags: [DefineScalingGrid({fields})])"
+        ))
+    };
+    assert!(
+        err("splitter: (width: 1, height: 1)")
+            .contains("Unexpected missing field named `character` in `DefineScalingGrid`")
+    );
+    assert!(
+        err("character: 1")
+            .contains("Unexpected missing field named `splitter` in `DefineScalingGrid`")
+    );
+    assert!(
+        err("character: 1, splitter: (width: 1)")
+            .contains("Unexpected missing field named `height` in `Rect`")
+    );
+    assert!(
+        err("character: 1, splitter: (width: 1, height: 1, z: 1)")
+            .contains("Unexpected field named `z` in `Rect`")
+    );
+    // The edges are whole numbers of twips, within 31 signed bits.
+    assert!(
+        err("character: 1, splitter: (x: 0.01, width: 1, height: 1)")
+            .contains("splitter: x: 0.01px is not a whole number of twips")
+    );
+    assert!(
+        err("character: 1, splitter: (width: 53687091.2, height: 1)")
+            .contains("splitter: width: 53687091.2px is out of range")
+    );
+}
+
+#[test]
 fn do_abc_2() {
     // The body is the flags, the null-terminated name and the ABC data.
     assert_eq!(
