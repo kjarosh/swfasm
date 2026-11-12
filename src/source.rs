@@ -23,8 +23,8 @@ pub struct Swf {
     /// The stage rectangle.
     ///
     /// Defaults to 550x400 pixels at the origin.
-    #[serde(default)]
-    pub stage: Stage,
+    #[serde(default = "default_stage")]
+    pub stage: Rect,
 
     /// Frame rate in frames per second.
     ///
@@ -54,43 +54,12 @@ fn default_frame_rate() -> f64 {
     24.0
 }
 
-/// The stage rectangle, in pixels.
-///
-/// It is stored in twips (1/20 of a pixel), so all values must be multiples of
-/// 0.05: e.g. `10.05` is representable, but `10.01` is not. The edges of the
-/// rectangle (`x`, `x + width`, `y` and `y + height`) are stored as 31-bit
-/// signed numbers of twips, so they must be between -53687091.2 and
-/// 53687091.15. Values that are not representable are an error.
-#[derive(Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Stage {
-    /// The left edge.
-    ///
-    /// Defaults to 0.
-    #[serde(default)]
-    pub x: f64,
-
-    /// The top edge.
-    ///
-    /// Defaults to 0.
-    #[serde(default)]
-    pub y: f64,
-
-    /// The width, which is added to `x` to get the right edge.
-    pub width: f64,
-
-    /// The height, which is added to `y` to get the bottom edge.
-    pub height: f64,
-}
-
-impl Default for Stage {
-    fn default() -> Self {
-        Self {
-            x: 0.0,
-            y: 0.0,
-            width: 550.0,
-            height: 400.0,
-        }
+fn default_stage() -> Rect {
+    Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 550.0,
+        height: 400.0,
     }
 }
 
@@ -552,9 +521,11 @@ impl Tag {
 
 /// A rectangle, in pixels.
 ///
-/// Like the stage, it is stored in twips (1/20 of a pixel), so all values must
-/// be multiples of 0.05, and its edges are stored as 31-bit signed numbers of
-/// twips. Values that are not representable are an error.
+/// It is stored in twips (1/20 of a pixel), so all values must be multiples of
+/// 0.05: e.g. `10.05` is representable, but `10.01` is not. The edges of the
+/// rectangle (`x`, `x + width`, `y` and `y + height`) are stored as 31-bit
+/// signed numbers of twips, so they must be between -53687091.2 and
+/// 53687091.15. Values that are not representable are an error.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rect {

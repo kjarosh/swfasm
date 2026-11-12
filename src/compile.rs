@@ -90,19 +90,10 @@ pub fn compile(swf: &Swf, files: &dyn FileProvider) -> Result<Vec<u8>> {
     write_tags(&swf.tags, swf.version, files, &mut tags)?;
     let num_frames = num_frames(swf.num_frames, &swf.tags)?;
 
-    let x = twips(swf.stage.x).context("stage x")?;
-    let y = twips(swf.stage.y).context("stage y")?;
-    let width = twips(swf.stage.width).context("stage width")?;
-    let height = twips(swf.stage.height).context("stage height")?;
     let header = Header {
         compression: swf::Compression::None,
         version: swf.version,
-        stage_size: Rectangle {
-            x_min: x,
-            x_max: add_twips(x, width).context("stage width")?,
-            y_min: y,
-            y_max: add_twips(y, height).context("stage height")?,
-        },
+        stage_size: rectangle(&swf.stage).context("stage")?,
         frame_rate: fixed8(swf.frame_rate).context("frame rate")?,
         num_frames,
     };

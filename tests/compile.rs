@@ -401,7 +401,11 @@ fn do_action_from_file() {
 fn invalid_values() {
     assert!(
         compile_err!("Swf(version: 10, stage: (width: 0.01, height: 1))")
-            .contains("stage width: 0.01px is not a whole number of twips")
+            .contains("stage: width: 0.01px is not a whole number of twips")
+    );
+    assert!(
+        compile_err!("Swf(version: 10, stage: (x: 53687091, width: 0.2, height: 1))")
+            .contains("stage: width: 53687091.2px is out of range")
     );
     assert!(
         compile_err!("Swf(version: 10, frame_rate: 0.001)")
