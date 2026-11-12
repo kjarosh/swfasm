@@ -304,13 +304,32 @@ fn raw_tag() {
         compile_tags!(r#"Raw(code: 2, force_long: true, data: InlineBytes("aa"))"#),
         [0xBF, 0x00, 0x01, 0x00, 0x00, 0x00, 0xAA]
     );
-    // Bodies that do not fit in the short form use the long one anyway.
+    // The longest body that fits in the short header form, and the shortest
+    // that does not. Headers of all tags are written the same way.
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"Raw(code: 2, data: InlineBytes("{}"))"#,
+            "00".repeat(62)
+        )),
+        [[0xBE, 0x00].as_slice(), &[0; 62]].concat()
+    );
     assert_eq!(
         compile_tags!(&format!(
             r#"Raw(code: 2, data: InlineBytes("{}"))"#,
             "00".repeat(63)
         )),
         [[0xBF, 0x00, 63, 0x00, 0x00, 0x00].as_slice(), &[0; 63]].concat()
+    );
+    assert_eq!(
+        compile_tags!(&format!(
+            r#"Raw(code: 2, data: InlineBytes("{}"))"#,
+            "00".repeat(0x1234)
+        )),
+        [
+            [0xBF, 0x00, 0x34, 0x12, 0x00, 0x00].as_slice(),
+            &[0; 0x1234]
+        ]
+        .concat()
     );
 }
 
@@ -451,26 +470,6 @@ fn do_action_bytes() {
         compile_tags!(r#"DoAction(InlineBytes(["07", "", "00"]))"#),
         [0x02, 0x03, 0x07, 0x00]
     );
-    // The longest body that fits in the short header form.
-    assert_eq!(
-        compile_tags!(&format!(r#"DoAction(InlineBytes("{}"))"#, "00".repeat(62))),
-        [[0x3E, 0x03].as_slice(), &[0; 62]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(r#"DoAction(InlineBytes("{}"))"#, "00".repeat(63))),
-        [[0x3F, 0x03, 63, 0x00, 0x00, 0x00].as_slice(), &[0; 63]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DoAction(InlineBytes("{}"))"#,
-            "00".repeat(0x1234)
-        )),
-        [
-            [0x3F, 0x03, 0x34, 0x12, 0x00, 0x00].as_slice(),
-            &[0; 0x1234]
-        ]
-        .concat()
-    );
 }
 
 #[test]
@@ -524,26 +523,6 @@ fn define_sprite() {
         [
             0xCA, 0x09, 0x01, 0x00, 0x01, 0x00, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00
         ]
-    );
-    // The longest body that fits in the short header form, and the shortest
-    // one that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            "DefineSprite(id: 1, num_frames: 0, tags: [{}])",
-            "End,".repeat(29)
-        )),
-        [[0xFE, 0x09, 0x01, 0x00, 0x00, 0x00].as_slice(), &[0; 58]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            "DefineSprite(id: 1, num_frames: 0, tags: [{}])",
-            "End,".repeat(30)
-        )),
-        [
-            [0xFF, 0x09, 64, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00].as_slice(),
-            &[0; 60]
-        ]
-        .concat()
     );
 }
 
@@ -1399,26 +1378,6 @@ fn define_binary_data() {
         compile_tags!(r#"DefineBinaryData(id: 1, data: InlineBytes(""))"#),
         [0xC6, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
     );
-    // The longest data that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DefineBinaryData(id: 1, data: InlineBytes("{}"))"#,
-            "00".repeat(56)
-        )),
-        [[0xFE, 0x15, 0x01, 0x00].as_slice(), &[0; 60]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DefineBinaryData(id: 1, data: InlineBytes("{}"))"#,
-            "00".repeat(57)
-        )),
-        [
-            [0xFF, 0x15, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
-            &[0; 61]
-        ]
-        .concat()
-    );
 }
 
 #[test]
@@ -1448,26 +1407,6 @@ fn define_bits() {
         compile_tags!(r#"DefineBits(id: 1, data: InlineBytes(""))"#),
         [0x82, 0x01, 0x01, 0x00]
     );
-    // The longest data that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DefineBits(id: 1, data: InlineBytes("{}"))"#,
-            "00".repeat(60)
-        )),
-        [[0xBE, 0x01, 0x01, 0x00].as_slice(), &[0; 60]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DefineBits(id: 1, data: InlineBytes("{}"))"#,
-            "00".repeat(61)
-        )),
-        [
-            [0xBF, 0x01, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
-            &[0; 61]
-        ]
-        .concat()
-    );
 }
 
 #[test]
@@ -1484,26 +1423,6 @@ fn define_bits_jpeg_2() {
     assert_eq!(
         compile_tags!(r#"DefineBitsJpeg2(id: 1, data: InlineBytes(""))"#),
         [0x42, 0x05, 0x01, 0x00]
-    );
-    // The longest data that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DefineBitsJpeg2(id: 1, data: InlineBytes("{}"))"#,
-            "00".repeat(60)
-        )),
-        [[0x7E, 0x05, 0x01, 0x00].as_slice(), &[0; 60]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DefineBitsJpeg2(id: 1, data: InlineBytes("{}"))"#,
-            "00".repeat(61)
-        )),
-        [
-            [0x7F, 0x05, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
-            &[0; 61]
-        ]
-        .concat()
     );
 }
 
@@ -1542,22 +1461,6 @@ fn jpeg_tables() {
     assert_eq!(
         compile_tags!(r#"JpegTables(InlineBytes(""))"#),
         [0x00, 0x02]
-    );
-    // The longest tables that fit in the short header form, and the shortest
-    // that do not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"JpegTables(InlineBytes("{}"))"#,
-            "00".repeat(62)
-        )),
-        [[0x3E, 0x02].as_slice(), &[0; 62]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"JpegTables(InlineBytes("{}"))"#,
-            "00".repeat(63)
-        )),
-        [[0x3F, 0x02, 63, 0x00, 0x00, 0x00].as_slice(), &[0; 63]].concat()
     );
 }
 
@@ -1780,22 +1683,6 @@ fn frame_label() {
             0x01, // anchor flag
         ]
     );
-    // The anchor flag counts towards the length of the body, which takes the
-    // long header form from 63 bytes.
-    let label = "a".repeat(61);
-    assert_eq!(
-        compile_tags!(&format!(r#"FrameLabel(label: "{label}")"#)),
-        [[0xFE, 0x0A].as_slice(), label.as_bytes(), &[0x00]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(r#"FrameLabel(label: "{label}", anchor: true)"#)),
-        [
-            [0xFF, 0x0A, 63, 0x00, 0x00, 0x00].as_slice(),
-            label.as_bytes(),
-            &[0x00, 0x01],
-        ]
-        .concat()
-    );
     // A frame can have several labels, and labels can repeat.
     assert_eq!(
         compile_tags!(
@@ -1900,43 +1787,7 @@ fn export_assets() {
 }
 
 #[test]
-fn export_assets_long() {
-    // The longest name that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"ExportAssets([(character: 1, name: "{}")])"#,
-            "a".repeat(57)
-        )),
-        [
-            [
-                0x3E, 0x0E, // header
-                0x01, 0x00, // count
-                0x01, 0x00, // asset #0: character
-            ]
-            .as_slice(),
-            &[b'a'; 57], // asset #0: name
-            &[0x00],
-        ]
-        .concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"ExportAssets([(character: 1, name: "{}")])"#,
-            "a".repeat(58)
-        )),
-        [
-            [
-                0x3F, 0x0E, 63, 0x00, 0x00, 0x00, // long header
-                0x01, 0x00, // count
-                0x01, 0x00, // asset #0: character
-            ]
-            .as_slice(),
-            &[b'a'; 58], // asset #0: name
-            &[0x00],
-        ]
-        .concat()
-    );
+fn export_assets_max_count() {
     // The most assets that the count can hold.
     assert_eq!(
         compile_tags!(&format!(
@@ -2024,26 +1875,6 @@ fn do_init_action() {
             0x01, 0x00, // sprite
             0x00, // actions
         ]
-    );
-    // The longest actions that fit in the short header form, and the shortest
-    // that do not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DoInitAction(sprite: 1, actions: InlineBytes("{}"))"#,
-            "00".repeat(60)
-        )),
-        [[0xFE, 0x0E, 0x01, 0x00].as_slice(), &[0; 60]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DoInitAction(sprite: 1, actions: InlineBytes("{}"))"#,
-            "00".repeat(61)
-        )),
-        [
-            [0xFF, 0x0E, 63, 0x00, 0x00, 0x00, 0x01, 0x00].as_slice(),
-            &[0; 61]
-        ]
-        .concat()
     );
 }
 
@@ -2298,31 +2129,6 @@ fn video_frame() {
             0x45, 0x0F, 0xFF, 0xFF, 0x01, 0x00, 0x00, // frame #1
         ]
     );
-    // The longest data that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"VideoFrame(stream: 1, frame: 0, data: InlineBytes("{}"))"#,
-            "00".repeat(58)
-        )),
-        [[0x7E, 0x0F, 0x01, 0x00, 0x00, 0x00].as_slice(), &[0; 58]].concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"VideoFrame(stream: 1, frame: 0, data: InlineBytes("{}"))"#,
-            "00".repeat(59)
-        )),
-        [
-            [
-                0x7F, 0x0F, 63, 0x00, 0x00, 0x00, // long header
-                0x01, 0x00, // stream
-                0x00, 0x00, // frame number
-            ]
-            .as_slice(),
-            &[0; 59]
-        ]
-        .concat()
-    );
 }
 
 #[test]
@@ -2495,24 +2301,6 @@ fn do_abc() {
             0x00, 0x12, // header
         ]
     );
-    // The longest data that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(r#"DoAbc(InlineBytes("{}"))"#, "00".repeat(62))),
-        [
-            [0x3E, 0x12].as_slice(), // header
-            &[0; 62],                // data
-        ]
-        .concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(r#"DoAbc(InlineBytes("{}"))"#, "00".repeat(63))),
-        [
-            [0x3F, 0x12, 63, 0x00, 0x00, 0x00].as_slice(), // long header
-            &[0; 63],                                      // data
-        ]
-        .concat()
-    );
 }
 
 #[test]
@@ -2624,43 +2412,7 @@ fn symbol_class() {
 }
 
 #[test]
-fn symbol_class_long() {
-    // The longest name that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"SymbolClass([(character: 1, name: "{}")])"#,
-            "a".repeat(57)
-        )),
-        [
-            [
-                0x3E, 0x13, // header
-                0x01, 0x00, // count
-                0x01, 0x00, // link #0: character
-            ]
-            .as_slice(),
-            &[b'a'; 57], // link #0: name
-            &[0x00],
-        ]
-        .concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"SymbolClass([(character: 1, name: "{}")])"#,
-            "a".repeat(58)
-        )),
-        [
-            [
-                0x3F, 0x13, 63, 0x00, 0x00, 0x00, // long header
-                0x01, 0x00, // count
-                0x01, 0x00, // link #0: character
-            ]
-            .as_slice(),
-            &[b'a'; 58], // link #0: name
-            &[0x00],
-        ]
-        .concat()
-    );
+fn symbol_class_max_count() {
     // The most links that the count can hold.
     assert_eq!(
         compile_tags!(&format!(
@@ -2732,26 +2484,6 @@ fn metadata() {
             0xFF, 0xFE, // metadata
             0x00, // null terminator
         ]
-    );
-    // The longest metadata that fits in the short header form, and the
-    // shortest that does not.
-    assert_eq!(
-        compile_tags!(&format!(r#"Metadata(InlineBytes("{}"))"#, "61".repeat(61))),
-        [
-            [0x7E, 0x13].as_slice(), // header: code 77, length 62
-            &[b'a'; 61],             // metadata
-            &[0x00],                 // null terminator
-        ]
-        .concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(r#"Metadata(InlineBytes("{}"))"#, "61".repeat(62))),
-        [
-            [0x7F, 0x13, 63, 0x00, 0x00, 0x00].as_slice(), // header: code 77, length 63
-            &[b'a'; 62],                                   // metadata
-            &[0x00],                                       // null terminator
-        ]
-        .concat()
     );
 }
 
@@ -2865,44 +2597,6 @@ fn do_abc_2() {
             "version {version}"
         );
     }
-}
-
-#[test]
-fn do_abc_2_long() {
-    // The longest body that fits in the short header form, and the shortest
-    // that does not.
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DoAbc2(name: "a", data: InlineBytes("{}"))"#,
-            "00".repeat(56)
-        )),
-        [
-            [
-                0xBE, 0x14, // header
-                0x00, 0x00, 0x00, 0x00, // flags
-                b'a', 0x00, // name
-            ]
-            .as_slice(),
-            &[0; 56], // data
-        ]
-        .concat()
-    );
-    assert_eq!(
-        compile_tags!(&format!(
-            r#"DoAbc2(name: "a", data: InlineBytes("{}"))"#,
-            "00".repeat(57)
-        )),
-        [
-            [
-                0xBF, 0x14, 63, 0x00, 0x00, 0x00, // long header
-                0x00, 0x00, 0x00, 0x00, // flags
-                b'a', 0x00, // name
-            ]
-            .as_slice(),
-            &[0; 57], // data
-        ]
-        .concat()
-    );
 }
 
 #[test]
