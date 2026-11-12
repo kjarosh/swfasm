@@ -206,7 +206,7 @@ fn explicit_num_frames() {
 #[test]
 fn file_attributes_flags() {
     // The tag header is followed by a 32-bit flags field, with the bits from
-    // the SWF specification.
+    // SWF19.
     assert_eq!(
         compile_tags!("FileAttributes()"),
         [0x44, 0x11, 0x00, 0x00, 0x00, 0x00]

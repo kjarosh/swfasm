@@ -1,4 +1,4 @@
-// The SWF header, and a timeline of two frames that stops on the second one.
+// The SWF header, and a timeline of two frames.
 Swf(
     version: 8,
     stage: (width: 320, height: 240),   // pixels, default 550x400

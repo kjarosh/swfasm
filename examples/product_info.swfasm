@@ -14,7 +14,7 @@ Swf(
         ),
         DebugId(InlineBytes("f8 6c 64 c2 6b 1d 4f 9e 8e 5a 2b 7e 31 0c 94 a3")),
 
-        Protect(password: "5f4dcc3b5aa765d61d8327deb882cf99"), // the MD5 of "password"
+        Protect(password: "5f4dcc3b5aa765d61d8327deb882cf99"),
 
         ShowFrame,
         End,

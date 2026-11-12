@@ -17,7 +17,7 @@ use swf::TagCode;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Swf {
-    /// The SWF version, e.g. `10` for Flash Player 10.
+    /// The SWF version.
     pub version: u8,
 
     /// The stage rectangle.
@@ -104,7 +104,7 @@ pub enum Tag {
     /// Marks the end of the tag list (code 0).
     End,
 
-    /// Displays the current frame and starts the next one (code 1).
+    /// Finishes the current frame and starts the next one (code 1).
     ShowFrame,
 
     /// Places a character on the display list (code 4).
@@ -130,8 +130,6 @@ pub enum Tag {
     },
 
     /// Removes a character from the display list (code 5).
-    ///
-    /// Superseded by `RemoveObject2`, which needs only the depth.
     RemoveObject {
         /// The ID of the character to remove.
         character: u16,
@@ -174,7 +172,7 @@ pub enum Tag {
     /// `0xFFFFFF`. Larger values are an error.
     SetBackgroundColor(u32),
 
-    /// AVM1 actions run when the current frame is displayed (code 12).
+    /// AVM1 actions run in the current frame (code 12).
     ///
     /// The data is AVM1 bytecode.
     DoAction(Data),
@@ -189,9 +187,9 @@ pub enum Tag {
         data: Data,
     },
 
-    /// Marks the SWF as not importable for editing (code 24).
+    /// Marks the SWF as protected (code 24).
     Protect {
-        /// The MD5 hash of the password, written as UTF-8.
+        /// The password, written as UTF-8 after two zero bytes.
         ///
         /// It must not contain null characters. Without it, the tag has an
         /// empty body.
@@ -272,15 +270,13 @@ pub enum Tag {
         /// The tags of the sprite's timeline, in order.
         ///
         /// Like on the main timeline, the list is written as is: an `End` tag
-        /// is not appended automatically. Tags that are not allowed in sprites
-        /// are not rejected.
+        /// is not appended automatically.
         tags: Vec<Tag>,
     },
 
     /// Gives a character a name (code 40).
     ///
-    /// The SWF specification doesn't document the tag, and players appear to
-    /// ignore it.
+    /// SWF19 doesn't document the tag.
     NameCharacter {
         /// The ID of the character to name.
         character: u16,
@@ -293,7 +289,7 @@ pub enum Tag {
 
     /// Describes the tool that wrote the SWF (code 41).
     ///
-    /// The SWF specification doesn't document the tag.
+    /// SWF19 doesn't document the tag.
     ProductInfo {
         /// `ProductID`.
         product_id: u32,
@@ -333,9 +329,6 @@ pub enum Tag {
     /// AVM1 actions that initialize a sprite (code 59).
     DoInitAction {
         /// The character ID of the sprite.
-        ///
-        /// It is written as is: it doesn't have to refer to a sprite, or to any
-        /// character at all.
         sprite: u16,
 
         /// The AVM1 bytecode.
@@ -356,15 +349,14 @@ pub enum Tag {
         /// The maximum depth of nested function calls (`MaxRecursionDepth`).
         max_recursion_depth: u16,
 
-        /// The number of seconds that the player runs ActionScript for before
-        /// asking whether to stop it (`ScriptTimeoutSeconds`).
+        /// The timeout in seconds for ActionScript execution
+        /// (`ScriptTimeoutSeconds`).
         timeout_seconds: u16,
     },
 
     /// Identifies the SWF for a debugger (code 63).
     ///
-    /// The SWF specification doesn't document the tag. The data must be
-    /// exactly 16 bytes.
+    /// SWF19 doesn't document the tag. The data must be exactly 16 bytes.
     DebugId(Data),
 
     /// Sets the tab order of the character at a depth (code 66).
@@ -376,7 +368,7 @@ pub enum Tag {
         tab_index: u16,
     },
 
-    /// Describes the SWF to the player (code 69).
+    /// Flags that describe the SWF (code 69).
     ///
     /// All flags default to false.
     FileAttributes {
@@ -403,21 +395,22 @@ pub enum Tag {
     },
 
     /// An ABC file (code 72).
+    ///
+    /// SWF19 doesn't document the tag.
     DoAbc(Data),
 
-    /// Sets how the player renders a text character (code 74).
+    /// Applies CSM settings to text (code 74).
     CsmTextSettings {
         /// The character ID of the text.
         text: u16,
 
-        /// Whether the player uses the advanced text rendering engine
-        /// (`UseFlashType`).
+        /// Whether to use the advanced text rendering engine (`UseFlashType`).
         ///
         /// Defaults to false.
         #[serde(default)]
         advanced_rendering: bool,
 
-        /// How the player fits glyphs to the pixel grid (`GridFit`).
+        /// How the glyphs should be fit to the pixel grid (`GridFit`).
         ///
         /// Defaults to `None`.
         #[serde(default)]
@@ -465,6 +458,8 @@ pub enum Tag {
     },
 
     /// An ABC file with a name and flags (code 82).
+    ///
+    /// SWF19 calls the tag `DoABC`.
     DoAbc2 {
         /// The `kDoAbcLazyInitializeFlag` flag (bit 0).
         ///
@@ -502,7 +497,7 @@ pub enum Tag {
         /// The character ID.
         id: u16,
 
-        /// The data.
+        /// The data, written after 4 reserved zero bytes.
         data: Data,
     },
 
@@ -707,7 +702,8 @@ pub struct ClipAction {
     /// `KeyPress` and `Construct` are an error.
     pub events: Vec<ClipEvent>,
 
-    /// The key that runs the actions on `KeyPress`.
+    /// The key code (`KeyCode`), written before the actions when set,
+    /// regardless of the events.
     #[serde(default)]
     pub key_code: Option<u8>,
 
@@ -801,13 +797,13 @@ pub struct DefineVideoStream {
     /// The height of the video, in pixels.
     pub height: u16,
 
-    /// Whether the player smooths the video (`VideoFlagsSmoothing`).
+    /// Whether the video is smoothed (`VideoFlagsSmoothing`).
     ///
     /// Defaults to false.
     #[serde(default)]
     pub smoothing: bool,
 
-    /// The deblocking filter that the player applies to the video
+    /// The deblocking filter that is applied to the video
     /// (`VideoFlagsDeblocking`).
     ///
     /// Defaults to `UseVideoPacketValue`.
@@ -836,8 +832,7 @@ pub struct VideoFrame {
     pub data: Data,
 }
 
-/// The deblocking filter that the player applies to a video stream, from
-/// `VideoFlagsDeblocking` in `DefineVideoStream`.
+/// The deblocking filter.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
 pub enum VideoDeblocking {
     /// Use the filter of the video packets (0).
@@ -847,7 +842,7 @@ pub enum VideoDeblocking {
     /// No filter (1).
     Off,
 
-    /// Level 1, the fastest filter (2).
+    /// Level 1 (2).
     Level1,
 
     /// Level 2 (3).
@@ -856,7 +851,7 @@ pub enum VideoDeblocking {
     /// Level 3 (4).
     Level3,
 
-    /// Level 4, the slowest filter (5).
+    /// Level 4 (5).
     Level4,
 }
 
@@ -864,7 +859,7 @@ pub enum VideoDeblocking {
 /// `DefineVideoStream`.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub enum VideoCodec {
-    /// No codec (0), which the SWF specification doesn't define.
+    /// No codec (0), which SWF19 doesn't define.
     None,
 
     /// Sorenson H.263 (2).
@@ -882,7 +877,7 @@ pub enum VideoCodec {
     /// Screen video version 2 (6).
     ScreenVideoV2,
 
-    /// H.264, also known as AVC (7).
+    /// H.264, also known as AVC (7), which SWF19 doesn't define.
     H264,
 }
 
@@ -905,8 +900,7 @@ pub struct FrameLabel {
     /// It must not contain null characters.
     pub label: String,
 
-    /// Whether the label is a named anchor, which the player can navigate to
-    /// with the URL fragment (`NamedAnchorFlag`, from SWF 6).
+    /// Whether the label is a named anchor.
     ///
     /// It is written as a byte of 1 after the label. Setting it before SWF 6 is
     /// an error.
@@ -967,8 +961,7 @@ pub struct ExportedAsset {
     pub name: String,
 }
 
-/// How the player fits glyphs to the pixel grid, from `GridFit` in
-/// `CsmTextSettings`.
+/// How the glyphs should be fit to the pixel grid.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
 pub enum GridFit {
     /// No fitting (0).
