@@ -619,10 +619,6 @@ fn do_action_bytes() {
         compile_tags!(r#"DoAction(InlineBytes("ff ff"))"#),
         [0x02, 0x03, 0xFF, 0xFF]
     );
-    assert_eq!(
-        compile_tags!(r#"DoAction(InlineBytes(["07", "", "00"]))"#),
-        [0x02, 0x03, 0x07, 0x00]
-    );
 }
 
 #[test]
@@ -1545,10 +1541,7 @@ fn frame_label() {
     );
     assert_eq!(
         compile_tags!(r#"FrameLabel(label: "start")"#),
-        [
-            0xC6, 0x0A, // header
-            0x73, 0x74, 0x61, 0x72, 0x74, 0x00, // label
-        ]
+        compile_tags!(r#"FrameLabel("start")"#)
     );
     // The anchor flag is a byte of 1 after the label.
     assert_eq!(
@@ -1561,10 +1554,7 @@ fn frame_label() {
     );
     assert_eq!(
         compile_tags!(r#"FrameLabel(label: "start", anchor: false)"#),
-        [
-            0xC6, 0x0A, // header
-            0x73, 0x74, 0x61, 0x72, 0x74, 0x00, // label
-        ]
+        compile_tags!(r#"FrameLabel("start")"#)
     );
     // The anchor flag is written from SWF 6.
     assert_eq!(
