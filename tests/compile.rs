@@ -557,6 +557,68 @@ fn data_errors() {
     assert_err!(err("InlineBytes([1, 2])"), "Expected string");
 }
 
+/// Each string field of a tag, with `{}` in place of the string, and the
+/// context of its errors.
+const STRING_FIELDS: &[(&str, &str)] = &[
+    ("Protect(password: {})", "password"),
+    ("PlaceObject2(depth: 1, name: {})", "name"),
+    ("NameCharacter(character: 1, name: {})", "name"),
+    ("FrameLabel({})", "label"),
+    ("ExportAssets([(character: 1, name: {})])", "asset #0: name"),
+    ("SymbolClass([(character: 1, name: {})])", "link #0: name"),
+    (r#"DoAbc2(name: {}, data: InlineBytes(""))"#, "name"),
+    (
+        "DefineSceneAndFrameLabelData(scenes: [(frame: 0, name: {})])",
+        "scenes: frame #0: name",
+    ),
+    (
+        "DefineSceneAndFrameLabelData(frame_labels: [(frame: 0, name: {})])",
+        "frame_labels: frame #0: name",
+    ),
+    ("DefineFontName(font: 1, name: {})", "name"),
+    (
+        r#"DefineFontName(font: 1, name: "", copyright: {})"#,
+        "copyright",
+    ),
+];
+
+#[test]
+fn strings_as_utf8() {
+    // Strings are written as UTF-8 in all SWF versions: like an ASCII string of
+    // the same length, with its bytes replaced.
+    let utf8 = "żółw";
+    let ascii = "a".repeat(utf8.len());
+    for (field, _) in STRING_FIELDS {
+        for version in [5, 10] {
+            let mut expected = compile_tags!(
+                field.replace("{}", &format!("{ascii:?}")),
+                version: version
+            );
+            let offset = expected
+                .windows(ascii.len())
+                .position(|window| window == ascii.as_bytes())
+                .unwrap();
+            expected.splice(offset..offset + ascii.len(), utf8.bytes());
+            assert_eq!(
+                compile_tags!(field.replace("{}", &format!("{utf8:?}")), version: version),
+                expected,
+                "{field}, version {version}"
+            );
+        }
+    }
+}
+
+#[test]
+fn string_errors() {
+    // Strings are null-terminated, so they can't contain null characters.
+    for (field, context) in STRING_FIELDS {
+        assert_err!(
+            tag_err!(field.replace("{}", r#""a\0b""#)),
+            format!(r#"tag #1: {context}: "a\0b" contains a null character"#)
+        );
+    }
+}
+
 #[test]
 fn do_action_bytes() {
     assert_eq!(
@@ -896,12 +958,6 @@ fn place_object_2() {
             0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
         ]
     );
-    assert_eq!(
-        compile_tags!(r#"PlaceObject2(depth: 1, name: "żółw")"#),
-        [
-            0x8B, 0x06, 0x20, 0x01, 0x00, 0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00
-        ]
-    );
 
     assert_eq!(
         *read_place_object!(
@@ -1152,10 +1208,6 @@ fn all_clip_events() {
 
 #[test]
 fn place_object_2_errors() {
-    assert_err!(
-        tag_err!(r#"PlaceObject2(depth: 1, name: "a\0b")"#),
-        r#"tag #1: name: "a\0b" contains a null character"#
-    );
     // Unlike in PlaceObject, alpha terms are checked like the others.
     assert_err!(
         tag_err!("PlaceObject2(depth: 1, color_transform: (alpha_mult: -64.00390625))"),
@@ -1364,10 +1416,6 @@ fn define_scene_and_frame_label_data_errors() {
         err(r#"scenes: [(frame: 1, name: "a"), (frame: 2, name: "b\0c")]"#),
         r#"scenes: frame #1: name: "b\0c" contains a null character"#
     );
-    assert_err!(
-        err(r#"frame_labels: [(frame: 1, name: "a\0b")]"#),
-        r#"frame_labels: frame #0: name: "a\0b" contains a null character"#
-    );
 }
 
 #[test]
@@ -1460,15 +1508,6 @@ fn protect() {
 }
 
 #[test]
-fn protect_errors() {
-    let err = |fields: &str| tag_err!(format!("Protect({fields})"));
-    assert_err!(
-        err(r#"password: "a\0b""#),
-        r#"password: "a\0b" contains a null character"#
-    );
-}
-
-#[test]
 fn name_character() {
     // The body is the character ID and the null-terminated name.
     assert_eq!(
@@ -1479,23 +1518,10 @@ fn name_character() {
             b'a', b'b', 0x00, // name
         ]
     );
-    // The name is written as UTF-8, and can be empty.
-    assert_eq!(
-        compile_tags!(r#"NameCharacter(character: 1, name: "ż")"#),
-        [0x05, 0x0A, 0x01, 0x00, 0xC5, 0xBC, 0x00]
-    );
+    // The name can be empty.
     assert_eq!(
         compile_tags!(r#"NameCharacter(character: 0xFFFF, name: "")"#),
         [0x03, 0x0A, 0xFF, 0xFF, 0x00]
-    );
-}
-
-#[test]
-fn name_character_errors() {
-    let err = |fields: &str| tag_err!(format!("NameCharacter({fields})"));
-    assert_err!(
-        err(r#"character: 1, name: "a\0b""#),
-        r#"name: "a\0b" contains a null character"#
     );
 }
 
@@ -1573,14 +1599,6 @@ fn frame_label() {
             0x61, 0x00, // label
         ]
     );
-    // The label is written as UTF-8 in all versions.
-    assert_eq!(
-        compile_tags!(r#"FrameLabel(label: "żółw")"#, version: 5),
-        [
-            0xC8, 0x0A, // header
-            0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00, // label
-        ]
-    );
     // Labels can be empty.
     assert_eq!(
         compile_tags!(r#"FrameLabel(label: "")"#),
@@ -1618,10 +1636,6 @@ fn frame_label() {
 
 #[test]
 fn frame_label_errors() {
-    assert_err!(
-        tag_err!(r#"FrameLabel(label: "a\0b")"#),
-        r#"tag #1: label: "a\0b" contains a null character"#
-    );
     assert_err!(
         tag_err!(r#"FrameLabel(label: "a", anchor: true)"#, version: 5),
         "tag #1: anchor: named anchors are not supported before SWF 6"
@@ -1675,21 +1689,6 @@ fn export_assets() {
             0x00, 0x00, // count
         ]
     );
-    // Names are written as UTF-8 in all SWF versions.
-    for version in [5, 10] {
-        assert_eq!(
-            compile_tags!(
-                r#"ExportAssets([(character: 1, name: "żółw")])"#,
-                version: version
-            ),
-            [
-                0x0C, 0x0E, // header
-                0x01, 0x00, // count
-                0x01, 0x00, 0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00, // asset #0
-            ],
-            "version {version}"
-        );
-    }
 }
 
 #[test]
@@ -2132,15 +2131,6 @@ fn symbol_class() {
             0x00, 0x00, // count
         ]
     );
-    // Names are written as UTF-8.
-    assert_eq!(
-        compile_tags!(r#"SymbolClass([(character: 1, name: "żółw")])"#),
-        [
-            0x0C, 0x13, // header
-            0x01, 0x00, // count
-            0x01, 0x00, 0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00, // link #0
-        ]
-    );
 }
 
 #[test]
@@ -2285,29 +2275,6 @@ fn do_abc_2() {
             0xFF, // data
         ]
     );
-    // Names are written as UTF-8 in all SWF versions.
-    for version in [5, 10] {
-        assert_eq!(
-            compile_tags!(
-                r#"DoAbc2(name: "żółw", data: InlineBytes(""))"#,
-                version: version
-            ),
-            [
-                0x8C, 0x14, // header
-                0x00, 0x00, 0x00, 0x00, // flags
-                0xC5, 0xBC, 0xC3, 0xB3, 0xC5, 0x82, 0x77, 0x00, // name
-            ],
-            "version {version}"
-        );
-    }
-}
-
-#[test]
-fn do_abc_2_errors() {
-    assert_err!(
-        tag_err!(r#"DoAbc2(name: "a\0b", data: InlineBytes(""))"#),
-        r#"tag #1: name: "a\0b" contains a null character"#
-    );
 }
 
 #[test]
@@ -2328,24 +2295,6 @@ fn define_font_name() {
     assert_eq!(
         compile_tags!(r#"DefineFontName(font: 1, name: "a")"#),
         [0x05, 0x16, 0x01, 0x00, b'a', 0x00, 0x00]
-    );
-    // Both strings are written as UTF-8.
-    assert_eq!(
-        compile_tags!(r#"DefineFontName(font: 1, name: "ż", copyright: "ó")"#),
-        [0x08, 0x16, 0x01, 0x00, 0xC5, 0xBC, 0x00, 0xC3, 0xB3, 0x00]
-    );
-}
-
-#[test]
-fn define_font_name_errors() {
-    let err = |fields: &str| tag_err!(format!("DefineFontName({fields})"));
-    assert_err!(
-        err(r#"font: 1, name: "a\0b""#),
-        r#"name: "a\0b" contains a null character"#
-    );
-    assert_err!(
-        err(r#"font: 1, name: "a", copyright: "b\0c""#),
-        r#"copyright: "b\0c" contains a null character"#
     );
 }
 
