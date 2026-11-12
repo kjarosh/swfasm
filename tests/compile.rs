@@ -341,15 +341,123 @@ fn tag_code_errors() {
     );
 }
 
+/// Each struct of the source, in the smallest tag that has it, with `{}` where
+/// a field can be added.
+const STRUCTS: &[&str] = &[
+    r#"Raw(code: 2, data: InlineBytes(""){})"#,
+    "PlaceObject(character: 1, depth: 1{})",
+    "PlaceObject(character: 1, depth: 1, matrix: (scale_x: 1{}))",
+    "PlaceObject(character: 1, depth: 1, color_transform: (red_add: 0{}))",
+    "RemoveObject(character: 1, depth: 1{})",
+    r#"DefineBits(id: 1, data: InlineBytes(""){})"#,
+    r#"DefineButton(id: 1, records: [], actions: InlineBytes(""){})"#,
+    r#"DefineButton(
+        id: 1,
+        records: [(states: [], character: 1, depth: 1{})],
+        actions: InlineBytes(""),
+    )"#,
+    r#"DefineBitsJpeg2(id: 1, data: InlineBytes(""){})"#,
+    r#"Protect(password: "a"{})"#,
+    "PlaceObject2(depth: 1{})",
+    r#"PlaceObject2(depth: 1, clip_actions: [(events: [], actions: InlineBytes(""){})])"#,
+    "RemoveObject2(depth: 1{})",
+    "DefineSprite(id: 1, tags: []{})",
+    r#"NameCharacter(character: 1, name: "a"{})"#,
+    "ProductInfo(
+        product_id: 0,
+        edition: 0,
+        major_version: 0,
+        minor_version: 0,
+        build_number: 0,
+        compilation_date: 0{}
+    )",
+    r#"FrameLabel(label: "a"{})"#,
+    r#"ExportAssets([(character: 1, name: "a"{})])"#,
+    r#"DoInitAction(sprite: 1, actions: InlineBytes(""){})"#,
+    "DefineVideoStream(id: 1, num_frames: 0, width: 0, height: 0, codec: H263{})",
+    r#"VideoFrame(stream: 1, frame: 0, data: InlineBytes(""){})"#,
+    "ScriptLimits(max_recursion_depth: 0, timeout_seconds: 0{})",
+    "SetTabIndex(depth: 1, tab_index: 0{})",
+    "FileAttributes(action_script_3: false{})",
+    "CsmTextSettings(text: 1{})",
+    r#"SymbolClass([(character: 1, name: "a"{})])"#,
+    "DefineScalingGrid(character: 1, splitter: (width: 1, height: 1){})",
+    "DefineScalingGrid(character: 1, splitter: (width: 1, height: 1{}))",
+    r#"DoAbc2(data: InlineBytes(""){})"#,
+    "DefineSceneAndFrameLabelData(scenes: []{})",
+    r#"DefineSceneAndFrameLabelData(scenes: [(frame: 0, name: "a"{})])"#,
+    r#"DefineBinaryData(id: 1, data: InlineBytes(""){})"#,
+    r#"DefineFontName(font: 1, name: "a"{})"#,
+];
+
+#[test]
+fn minimal_structs() {
+    // Only the fields in the table are required.
+    for tag in STRUCTS {
+        compile_tags!(tag.replace("{}", ""));
+    }
+}
+
 #[test]
 fn unknown_fields() {
+    for tag in STRUCTS {
+        assert_err!(
+            tag_err!(tag.replace("{}", ", zzz: 1")),
+            "Unexpected field named `zzz`"
+        );
+    }
     assert_err!(
-        tag_err!("FileAttributes(as_3: true)"),
-        "Unexpected field named `as_3` in `FileAttributes`"
+        compile_err!("Swf(version: 10, zzz: 1)"),
+        "Unexpected field named `zzz` in `Swf`"
     );
     assert_err!(
-        tag_err!(r#"Raw(code: 1, data: InlineBytes(""), long: true)"#),
-        "Unexpected field named `long` in `Raw`"
+        compile_err!("Swf(version: 10, stage: (width: 1, height: 1, zzz: 1))"),
+        "Unexpected field named `zzz` in `Rect`"
+    );
+}
+
+#[test]
+fn ron_errors() {
+    // The messages are compared whole, as they are a part of the interface.
+    let err = |tags: &str| compile_err!(format!("Swf(version: 10, tags: [{tags}])"));
+    assert_eq!(
+        err(r#"DefineBits(data: InlineBytes(""))"#),
+        "1:57: Unexpected missing field named `id` in `DefineBits`"
+    );
+    assert_eq!(
+        err(r#"ExportAssets([(name: "a")])"#),
+        "1:49: Unexpected missing field named `character` in `ExportedAsset`"
+    );
+    assert_eq!(
+        err("RemoveObject2(depth: 1, zzz: 1)"),
+        "1:49-1:52: Unexpected field named `zzz` in `RemoveObject2`, expected `depth` instead"
+    );
+    assert_eq!(
+        err("CsmTextSettings(text: 1, grid_fit: Grid)"),
+        "1:60-1:64: Unexpected variant named `Grid` in enum `GridFit`, expected one of `None`, \
+         `Pixel`, or `SubPixel` instead"
+    );
+    assert_eq!(
+        err("RemoveObject2(depth: 65536)"),
+        "1:46-1:51: Integer is out of bounds"
+    );
+    assert_eq!(
+        err("RemoveObject2(depth: -1)"),
+        "1:47-1:48: Integer is out of bounds"
+    );
+    assert_eq!(
+        err("NameCharacter(character: 1, name: 1)"),
+        "1:58-1:59: Expected string"
+    );
+    assert_eq!(err(r#"DoAction("00")"#), "1:34: Expected identifier");
+    assert_eq!(
+        compile_err!(r#"Swf(version: 10, frame_rate: "a")"#),
+        "1:29-1:30: Expected float"
+    );
+    // Positions count lines and columns of the whole source.
+    assert_eq!(
+        compile_err!("Swf(\n    version: 10,\n    tags: [ShowFrame ShowFrame],\n)"),
+        "3:22: Expected comma"
     );
 }
 
@@ -560,18 +668,6 @@ fn define_sprite_errors() {
         ),
         "tag #1: tag #1: background color 0x1000000 is not in the 0xRRGGBB format"
     );
-    assert_err!(
-        tag_err!("DefineSprite(tags: [])"),
-        "Unexpected missing field named `id` in `DefineSprite`"
-    );
-    assert_err!(
-        tag_err!("DefineSprite(id: 1)"),
-        "Unexpected missing field named `tags` in `DefineSprite`"
-    );
-    assert_err!(
-        tag_err!("DefineSprite(id: 1, frames: 1)"),
-        "Unexpected field named `frames` in `DefineSprite`"
-    );
 }
 
 #[test]
@@ -585,22 +681,6 @@ fn remove_object() {
     assert_eq!(
         compile_tags!("RemoveObject2(depth: 0x1234)"),
         [0x02, 0x07, 0x34, 0x12]
-    );
-}
-
-#[test]
-fn remove_object_errors() {
-    assert_err!(
-        tag_err!("RemoveObject(depth: 1)"),
-        "Unexpected missing field named `character` in `RemoveObject`"
-    );
-    assert_err!(
-        tag_err!("RemoveObject2()"),
-        "Unexpected missing field named `depth` in `RemoveObject2`"
-    );
-    assert_err!(
-        tag_err!("RemoveObject2(character: 1, depth: 1)"),
-        "Unexpected field named `character` in `RemoveObject2`"
     );
 }
 
@@ -720,22 +800,6 @@ fn place_object_errors() {
         tag_err!("PlaceObject(character: 1, depth: 1, color_transform: (alpha_add: 1))"),
         "tag #1: color_transform: PlaceObject cannot encode non-default alpha terms"
     );
-    assert_err!(
-        tag_err!("PlaceObject(depth: 1)"),
-        "Unexpected missing field named `character` in `PlaceObject`"
-    );
-    assert_err!(
-        tag_err!("PlaceObject(character: 1, depth: 1, name: \"a\")"),
-        "Unexpected field named `name` in `PlaceObject`"
-    );
-    assert_err!(
-        tag_err!("PlaceObject(character: 1, depth: 1, matrix: (scale: 1))"),
-        "Unexpected field named `scale` in `Matrix`"
-    );
-    assert_err!(
-        tag_err!("PlaceObject(character: 1, depth: 1, color_transform: (red: 1))"),
-        "Unexpected field named `red` in `ColorTransform`"
-    );
 }
 
 #[test]
@@ -791,7 +855,6 @@ fn place_object_invalid_values() {
         color_err("blue_add: 16384"),
         "color_transform: blue_add: 16384 is out of range"
     );
-    assert_err!(color_err("red_add: 32768"), "Integer is out of bounds");
 }
 
 #[test]
@@ -1085,18 +1148,10 @@ fn all_clip_events() {
         ),
         "tag #1: all_clip_events: KeyPress events are not supported before SWF 6"
     );
-    assert_err!(
-        err("PlaceObject2(depth: 1, all_clip_events: [Click])", 10),
-        "Unexpected variant named `Click` in enum `ClipEvent`"
-    );
 }
 
 #[test]
 fn place_object_2_errors() {
-    assert_err!(
-        tag_err!("PlaceObject2(character: 1)"),
-        "Unexpected missing field named `depth` in `PlaceObject2`"
-    );
     assert_err!(
         tag_err!(r#"PlaceObject2(depth: 1, name: "a\0b")"#),
         r#"tag #1: name: "a\0b" contains a null character"#
@@ -1129,14 +1184,6 @@ fn clip_action_errors() {
             &format!("clip action #0: {event} events are not supported before SWF 6")
         );
     }
-    assert_err!(
-        err(r#"[(events: [Load])]"#, 10),
-        "Unexpected missing field named `actions` in `ClipAction`"
-    );
-    assert_err!(
-        err(r#"[(events: [Click], actions: InlineBytes(""))]"#, 10),
-        "Unexpected variant named `Click` in enum `ClipEvent`"
-    );
     assert_err!(
         compile_err!(
             r#"Swf(version: 10, tags: [PlaceObject2(depth: 1, clip_actions: [
@@ -1265,28 +1312,6 @@ fn define_button_errors() {
         "tag #1: records: record #1: matrix: scale_x: 0.1 is not representable as a 16.16 fixed point number"
     );
     assert_err!(
-        record_err("(states: [Hit], character: 1, depth: 2)"),
-        "Unexpected variant named `Hit` in enum `ButtonState`"
-    );
-    assert_err!(
-        record_err("(character: 1, depth: 2)"),
-        "Unexpected missing field named `states` in `ButtonRecord`"
-    );
-    assert_err!(
-        record_err("(states: [Up], character: 1, depth: 2, color_transform: ())"),
-        "Unexpected field named `color_transform` in `ButtonRecord`"
-    );
-    assert_err!(
-        tag_err!("DefineButton(id: 1, records: [])"),
-        "Unexpected missing field named `actions` in `DefineButton`"
-    );
-    assert_err!(
-        tag_err!(
-            r#"DefineButton(id: 1, records: [], actions: InlineBytes(""), track_as_menu: true)"#
-        ),
-        "Unexpected field named `track_as_menu` in `DefineButton`"
-    );
-    assert_err!(
         compile_err!(
             r#"Swf(version: 10, tags: [DefineButton(id: 1, records: [], actions: File("x"))])"#,
             &Failing
@@ -1336,28 +1361,12 @@ fn define_scene_and_frame_label_data() {
 fn define_scene_and_frame_label_data_errors() {
     let err = |fields: &str| tag_err!(format!("DefineSceneAndFrameLabelData({fields})"));
     assert_err!(
-        err(r#"scenes: [(name: "a")]"#),
-        "Unexpected missing field named `frame` in `NamedFrame`"
-    );
-    assert_err!(
-        err("scenes: [(frame: 1)]"),
-        "Unexpected missing field named `name` in `NamedFrame`"
-    );
-    assert_err!(
-        err(r#"scenes: [(frame: 1, label: "a")]"#),
-        "Unexpected field named `label` in `NamedFrame`"
-    );
-    assert_err!(
         err(r#"scenes: [(frame: 1, name: "a"), (frame: 2, name: "b\0c")]"#),
         r#"scenes: frame #1: name: "b\0c" contains a null character"#
     );
     assert_err!(
         err(r#"frame_labels: [(frame: 1, name: "a\0b")]"#),
         r#"frame_labels: frame #0: name: "a\0b" contains a null character"#
-    );
-    assert_err!(
-        err(r#"scenes: [(frame: 4294967296, name: "a")]"#),
-        "Integer is out of bounds"
     );
 }
 
@@ -1377,18 +1386,6 @@ fn define_binary_data() {
     assert_eq!(
         compile_tags!(r#"DefineBinaryData(id: 1, data: InlineBytes(""))"#),
         [0xC6, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
-    );
-}
-
-#[test]
-fn define_binary_data_errors() {
-    assert_err!(
-        tag_err!(r#"DefineBinaryData(data: InlineBytes(""))"#),
-        "Unexpected missing field named `id` in `DefineBinaryData`"
-    );
-    assert_err!(
-        tag_err!("DefineBinaryData(id: 1)"),
-        "Unexpected missing field named `data` in `DefineBinaryData`"
     );
 }
 
@@ -1427,27 +1424,6 @@ fn define_bits_jpeg_2() {
 }
 
 #[test]
-fn define_bits_jpeg_2_errors() {
-    let err = |fields: &str| tag_err!(format!("DefineBitsJpeg2({fields})"));
-    assert_err!(
-        err(r#"data: InlineBytes("")"#),
-        "Unexpected missing field named `id` in `DefineBitsJpeg2`"
-    );
-    assert_err!(
-        err("id: 1"),
-        "Unexpected missing field named `data` in `DefineBitsJpeg2`"
-    );
-    assert_err!(
-        err(r#"id: 1, jpeg: InlineBytes("")"#),
-        "Unexpected field named `jpeg` in `DefineBitsJpeg2`"
-    );
-    assert_err!(
-        err(r#"id: -1, data: InlineBytes("")"#),
-        "Integer is out of bounds"
-    );
-}
-
-#[test]
 fn jpeg_tables() {
     // The body is the tables, written as is.
     assert_eq!(
@@ -1461,27 +1437,6 @@ fn jpeg_tables() {
     assert_eq!(
         compile_tags!(r#"JpegTables(InlineBytes(""))"#),
         [0x00, 0x02]
-    );
-}
-
-#[test]
-fn define_bits_errors() {
-    let err = |fields: &str| tag_err!(format!("DefineBits({fields})"));
-    assert_err!(
-        err(r#"data: InlineBytes("")"#),
-        "Unexpected missing field named `id` in `DefineBits`"
-    );
-    assert_err!(
-        err("id: 1"),
-        "Unexpected missing field named `data` in `DefineBits`"
-    );
-    assert_err!(
-        err(r#"id: 1, jpeg: InlineBytes("")"#),
-        "Unexpected field named `jpeg` in `DefineBits`"
-    );
-    assert_err!(
-        err(r#"id: 0x10000, data: InlineBytes("")"#),
-        "Integer is out of bounds"
     );
 }
 
@@ -1507,10 +1462,6 @@ fn protect() {
 #[test]
 fn protect_errors() {
     let err = |fields: &str| tag_err!(format!("Protect({fields})"));
-    assert_err!(
-        err(r#"md5: "a""#),
-        "Unexpected field named `md5` in `Protect`"
-    );
     assert_err!(
         err(r#"password: "a\0b""#),
         r#"password: "a\0b" contains a null character"#
@@ -1543,22 +1494,6 @@ fn name_character() {
 fn name_character_errors() {
     let err = |fields: &str| tag_err!(format!("NameCharacter({fields})"));
     assert_err!(
-        err(r#"name: "a""#),
-        "Unexpected missing field named `character` in `NameCharacter`"
-    );
-    assert_err!(
-        err("character: 1"),
-        "Unexpected missing field named `name` in `NameCharacter`"
-    );
-    assert_err!(
-        err(r#"id: 1, name: "a""#),
-        "Unexpected field named `id` in `NameCharacter`"
-    );
-    assert_err!(
-        err(r#"character: 0x10000, name: "a""#),
-        "Integer is out of bounds"
-    );
-    assert_err!(
         err(r#"character: 1, name: "a\0b""#),
         r#"name: "a\0b" contains a null character"#
     );
@@ -1586,27 +1521,6 @@ fn product_info() {
             0x12, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, // build number
             0x1A, 0x19, 0x18, 0x17, 0x16, 0x15, 0x14, 0x13, // compilation date
         ]
-    );
-}
-
-#[test]
-fn product_info_errors() {
-    let err = |fields: &str| tag_err!(format!("ProductInfo({fields})"));
-    let all_fields = "product_id: 1, edition: 2, major_version: 3, minor_version: 4, \
-                      build_number: 5, compilation_date: 6";
-    assert_err!(
-        err("edition: 2, major_version: 3, minor_version: 4, build_number: 5, compilation_date: 6"),
-        "Unexpected missing field named `product_id` in `ProductInfo`"
-    );
-    assert_err!(
-        err(&format!("{all_fields}, version: 7")),
-        "Unexpected field named `version` in `ProductInfo`"
-    );
-    assert_err!(
-        err(
-            "product_id: 1, edition: 2, major_version: 256, minor_version: 4, build_number: 5, compilation_date: 6"
-        ),
-        "Integer is out of bounds"
     );
 }
 
@@ -1720,14 +1634,6 @@ fn frame_label_errors() {
         ),
         "tag #1: tag #0: anchor: named anchors are not supported before SWF 6"
     );
-    assert_err!(
-        tag_err!("FrameLabel(anchor: true)"),
-        "Unexpected missing field named `label` in `FrameLabel`"
-    );
-    assert_err!(
-        tag_err!(r#"FrameLabel(label: "a", named_anchor: true)"#),
-        "Unexpected field named `named_anchor` in `FrameLabel`"
-    );
     assert_err!(tag_err!("FrameLabel(1)"), "Expected a label or a struct");
     assert_err!(tag_err!("FrameLabel()"), "Expected a label or a struct");
 }
@@ -1819,18 +1725,6 @@ fn export_assets_errors() {
         )),
         "tag #1: too many assets: 65536, at most 65535"
     );
-    assert_err!(
-        tag_err!(r#"ExportAssets([(name: "a")])"#),
-        "Unexpected missing field named `character` in `ExportedAsset`"
-    );
-    assert_err!(
-        tag_err!("ExportAssets([(character: 1)])"),
-        "Unexpected missing field named `name` in `ExportedAsset`"
-    );
-    assert_err!(
-        tag_err!(r#"ExportAssets([(id: 1, name: "a")])"#),
-        "Unexpected field named `id` in `ExportedAsset`"
-    );
 }
 
 #[test]
@@ -1875,26 +1769,6 @@ fn do_init_action() {
             0x01, 0x00, // sprite
             0x00, // actions
         ]
-    );
-}
-
-#[test]
-fn do_init_action_errors() {
-    assert_err!(
-        tag_err!(r#"DoInitAction(sprite: 0x10000, actions: InlineBytes(""))"#),
-        "Integer is out of bounds"
-    );
-    assert_err!(
-        tag_err!(r#"DoInitAction(actions: InlineBytes(""))"#),
-        "Unexpected missing field named `sprite` in `DoInitAction`"
-    );
-    assert_err!(
-        tag_err!("DoInitAction(sprite: 1)"),
-        "Unexpected missing field named `actions` in `DoInitAction`"
-    );
-    assert_err!(
-        tag_err!(r#"DoInitAction(id: 1, actions: InlineBytes(""))"#),
-        "Unexpected field named `id` in `DoInitAction`"
     );
 }
 
@@ -2041,57 +1915,6 @@ fn define_video_stream_codecs() {
 }
 
 #[test]
-fn define_video_stream_errors() {
-    let err = |fields: &str| tag_err!(format!("DefineVideoStream({fields})"));
-    let all_fields = "id: 1, num_frames: 1, width: 1, height: 1, codec: H263";
-    assert_err!(
-        err("num_frames: 1, width: 1, height: 1, codec: H263"),
-        "Unexpected missing field named `id` in `DefineVideoStream`"
-    );
-    assert_err!(
-        err("id: 1, width: 1, height: 1, codec: H263"),
-        "Unexpected missing field named `num_frames` in `DefineVideoStream`"
-    );
-    assert_err!(
-        err("id: 1, num_frames: 1, height: 1, codec: H263"),
-        "Unexpected missing field named `width` in `DefineVideoStream`"
-    );
-    assert_err!(
-        err("id: 1, num_frames: 1, width: 1, codec: H263"),
-        "Unexpected missing field named `height` in `DefineVideoStream`"
-    );
-    assert_err!(
-        err("id: 1, num_frames: 1, width: 1, height: 1"),
-        "Unexpected missing field named `codec` in `DefineVideoStream`"
-    );
-    assert_err!(
-        err(&format!("{all_fields}, smooth: true")),
-        "Unexpected field named `smooth` in `DefineVideoStream`"
-    );
-    // The codec and the deblocking filter can only be one of the known values.
-    assert_err!(
-        err("id: 1, num_frames: 1, width: 1, height: 1, codec: H265"),
-        "Unexpected variant named `H265` in enum `VideoCodec`"
-    );
-    assert_err!(
-        err(&format!("{all_fields}, deblocking: Level5")),
-        "Unexpected variant named `Level5` in enum `VideoDeblocking`"
-    );
-    assert_err!(
-        err("id: 0x10000, num_frames: 1, width: 1, height: 1, codec: H263"),
-        "Integer is out of bounds"
-    );
-    assert_err!(
-        err("id: 1, num_frames: 1, width: -1, height: 1, codec: H263"),
-        "Integer is out of bounds"
-    );
-    assert_err!(
-        err("id: 1, num_frames: 1, width: 1, height: 65536, codec: H263"),
-        "Integer is out of bounds"
-    );
-}
-
-#[test]
 fn video_frame() {
     // The body is the character ID of the stream, the number of the frame and
     // the data of the frame.
@@ -2128,35 +1951,6 @@ fn video_frame() {
             0x45, 0x0F, 0x00, 0x00, 0x01, 0x00, 0x00, // frame #0
             0x45, 0x0F, 0xFF, 0xFF, 0x01, 0x00, 0x00, // frame #1
         ]
-    );
-}
-
-#[test]
-fn video_frame_errors() {
-    let err = |fields: &str| tag_err!(format!("VideoFrame({fields})"));
-    assert_err!(
-        err(r#"frame: 0, data: InlineBytes("")"#),
-        "Unexpected missing field named `stream` in `VideoFrame`"
-    );
-    assert_err!(
-        err(r#"stream: 1, data: InlineBytes("")"#),
-        "Unexpected missing field named `frame` in `VideoFrame`"
-    );
-    assert_err!(
-        err("stream: 1, frame: 0"),
-        "Unexpected missing field named `data` in `VideoFrame`"
-    );
-    assert_err!(
-        err(r#"stream: 1, frame_num: 0, data: InlineBytes("")"#),
-        "Unexpected field named `frame_num` in `VideoFrame`"
-    );
-    assert_err!(
-        err(r#"stream: 0x10000, frame: 0, data: InlineBytes("")"#),
-        "Integer is out of bounds"
-    );
-    assert_err!(
-        err(r#"stream: 1, frame: -1, data: InlineBytes("")"#),
-        "Integer is out of bounds"
     );
 }
 
@@ -2209,27 +2003,6 @@ fn set_tab_index() {
 }
 
 #[test]
-fn set_tab_index_errors() {
-    let err = |fields: &str| tag_err!(format!("SetTabIndex({fields})"));
-    assert_err!(
-        err("tab_index: 1"),
-        "Unexpected missing field named `depth` in `SetTabIndex`"
-    );
-    assert_err!(
-        err("depth: 1"),
-        "Unexpected missing field named `tab_index` in `SetTabIndex`"
-    );
-    assert_err!(
-        err("depth: 1, index: 1"),
-        "Unexpected field named `index` in `SetTabIndex`"
-    );
-    assert_err!(
-        err("depth: 1, tab_index: 65536"),
-        "Integer is out of bounds"
-    );
-}
-
-#[test]
 fn script_limits() {
     assert_eq!(
         compile_tags!("ScriptLimits(max_recursion_depth: 0x1234, timeout_seconds: 0x5678)"),
@@ -2250,30 +2023,6 @@ fn script_limits() {
             0x00, 0x00, // max recursion depth: 0
             0xFF, 0xFF, // timeout seconds: 65535
         ]
-    );
-}
-
-#[test]
-fn script_limits_errors() {
-    assert_err!(
-        tag_err!("ScriptLimits(max_recursion_depth: 65536, timeout_seconds: 1)"),
-        "Integer is out of bounds"
-    );
-    assert_err!(
-        tag_err!("ScriptLimits(max_recursion_depth: 1, timeout_seconds: -1)"),
-        "Integer is out of bounds"
-    );
-    assert_err!(
-        tag_err!("ScriptLimits(timeout_seconds: 1)"),
-        "Unexpected missing field named `max_recursion_depth` in `ScriptLimits`"
-    );
-    assert_err!(
-        tag_err!("ScriptLimits(max_recursion_depth: 1)"),
-        "Unexpected missing field named `timeout_seconds` in `ScriptLimits`"
-    );
-    assert_err!(
-        tag_err!("ScriptLimits(max_recursion_depth: 1, timeout: 1)"),
-        "Unexpected field named `timeout` in `ScriptLimits`"
     );
 }
 
@@ -2344,23 +2093,6 @@ fn csm_text_settings_grid_fit() {
             "grid_fit: {grid_fit}"
         );
     }
-}
-
-#[test]
-fn csm_text_settings_errors() {
-    let err = |fields: &str| tag_err!(format!("CsmTextSettings({fields})"));
-    assert_err!(
-        err("advanced_rendering: true"),
-        "Unexpected missing field named `text` in `CsmTextSettings`"
-    );
-    assert_err!(
-        err("id: 1"),
-        "Unexpected field named `id` in `CsmTextSettings`"
-    );
-    assert_err!(
-        err("text: 1, grid_fit: Grid"),
-        "Unexpected variant named `Grid` in enum `GridFit`"
-    );
 }
 
 #[test]
@@ -2444,18 +2176,6 @@ fn symbol_class_errors() {
         )),
         "tag #1: too many links: 65536, at most 65535"
     );
-    assert_err!(
-        tag_err!(r#"SymbolClass([(name: "a")])"#),
-        "Unexpected missing field named `character` in `SymbolClassLink`"
-    );
-    assert_err!(
-        tag_err!("SymbolClass([(character: 1)])"),
-        "Unexpected missing field named `name` in `SymbolClassLink`"
-    );
-    assert_err!(
-        tag_err!(r#"SymbolClass([(character: 1, class_name: "a")])"#),
-        "Unexpected field named `class_name` in `SymbolClassLink`"
-    );
 }
 
 #[test]
@@ -2494,7 +2214,6 @@ fn metadata_errors() {
         tag_err!(r#"Metadata(InlineBytes("61 00 62"))"#),
         "tag #1: null byte at offset 1, which would end the string early"
     );
-    assert_err!(tag_err!("Metadata()"), "Expected identifier");
 }
 
 #[test]
@@ -2524,22 +2243,6 @@ fn define_scaling_grid() {
 #[test]
 fn define_scaling_grid_errors() {
     let err = |fields: &str| tag_err!(format!("DefineScalingGrid({fields})"));
-    assert_err!(
-        err("splitter: (width: 1, height: 1)"),
-        "Unexpected missing field named `character` in `DefineScalingGrid`"
-    );
-    assert_err!(
-        err("character: 1"),
-        "Unexpected missing field named `splitter` in `DefineScalingGrid`"
-    );
-    assert_err!(
-        err("character: 1, splitter: (width: 1)"),
-        "Unexpected missing field named `height` in `Rect`"
-    );
-    assert_err!(
-        err("character: 1, splitter: (width: 1, height: 1, z: 1)"),
-        "Unexpected field named `z` in `Rect`"
-    );
     // The edges are whole numbers of twips, within 31 signed bits.
     assert_err!(
         err("character: 1, splitter: (x: 0.01, width: 1, height: 1)"),
@@ -2605,14 +2308,6 @@ fn do_abc_2_errors() {
         tag_err!(r#"DoAbc2(name: "a\0b", data: InlineBytes(""))"#),
         r#"tag #1: name: "a\0b" contains a null character"#
     );
-    assert_err!(
-        tag_err!("DoAbc2()"),
-        "Unexpected missing field named `data` in `DoAbc2`"
-    );
-    assert_err!(
-        tag_err!(r#"DoAbc2(flags: 1, data: InlineBytes(""))"#),
-        "Unexpected field named `flags` in `DoAbc2`"
-    );
 }
 
 #[test]
@@ -2644,18 +2339,6 @@ fn define_font_name() {
 #[test]
 fn define_font_name_errors() {
     let err = |fields: &str| tag_err!(format!("DefineFontName({fields})"));
-    assert_err!(
-        err(r#"name: "a""#),
-        "Unexpected missing field named `font` in `DefineFontName`"
-    );
-    assert_err!(
-        err("font: 1"),
-        "Unexpected missing field named `name` in `DefineFontName`"
-    );
-    assert_err!(
-        err(r#"id: 1, name: "a""#),
-        "Unexpected field named `id` in `DefineFontName`"
-    );
     assert_err!(
         err(r#"font: 1, name: "a\0b""#),
         r#"name: "a\0b" contains a null character"#
