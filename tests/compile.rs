@@ -236,46 +236,29 @@ fn explicit_num_frames() {
 fn file_attributes_flags() {
     // The tag header is followed by a 32-bit flags field, with the bits from
     // SWF19.
-    assert_eq!(
-        compile_tags!("FileAttributes()"),
-        [0x44, 0x11, 0x00, 0x00, 0x00, 0x00]
-    );
-    assert_eq!(
-        compile_tags!("FileAttributes(use_network: true)"),
-        [0x44, 0x11, 0x01, 0x00, 0x00, 0x00]
-    );
-    assert_eq!(
-        compile_tags!("FileAttributes(action_script_3: true)"),
-        [0x44, 0x11, 0x08, 0x00, 0x00, 0x00]
-    );
-    assert_eq!(
-        compile_tags!("FileAttributes(has_metadata: true)"),
-        [0x44, 0x11, 0x10, 0x00, 0x00, 0x00]
-    );
-    assert_eq!(
-        compile_tags!("FileAttributes(use_gpu: true)"),
-        [0x44, 0x11, 0x20, 0x00, 0x00, 0x00]
-    );
-    assert_eq!(
-        compile_tags!("FileAttributes(use_direct_blit: true)"),
-        [0x44, 0x11, 0x40, 0x00, 0x00, 0x00]
-    );
-    assert_eq!(
-        compile_tags!(
-            "FileAttributes(
-                action_script_3: true,
-                use_network: true,
-                has_metadata: true,
-                use_gpu: true,
-                use_direct_blit: true,
-            )"
+    for (field, flags) in [
+        ("", 0x00),
+        ("use_network: true", 0x01),
+        ("action_script_3: true", 0x08),
+        ("has_metadata: true", 0x10),
+        ("use_gpu: true", 0x20),
+        ("use_direct_blit: true", 0x40),
+        ("use_network: false, use_gpu: false", 0x00),
+        (
+            "action_script_3: true,
+            use_network: true,
+            has_metadata: true,
+            use_gpu: true,
+            use_direct_blit: true",
+            0x79,
         ),
-        [0x44, 0x11, 0x79, 0x00, 0x00, 0x00]
-    );
-    assert_eq!(
-        compile_tags!("FileAttributes(use_network: false, use_gpu: false)"),
-        [0x44, 0x11, 0x00, 0x00, 0x00, 0x00]
-    );
+    ] {
+        assert_eq!(
+            compile_tags!(format!("FileAttributes({field})")),
+            [0x44, 0x11, flags, 0x00, 0x00, 0x00],
+            "{field}"
+        );
+    }
 }
 
 #[test]
@@ -2085,10 +2068,13 @@ fn csm_text_settings() {
 #[test]
 fn csm_text_settings_grid_fit() {
     // Grid fitting is bits 3 to 5 of the flags.
-    for (grid_fit, value) in [("None", 0x00), ("Pixel", 0x08), ("SubPixel", 0x10)] {
+    for (grid_fit, flags) in [("None", 0x00), ("Pixel", 0x08), ("SubPixel", 0x10)] {
         assert_eq!(
-            compile_tags!(format!("CsmTextSettings(text: 1, grid_fit: {grid_fit})"))[4],
-            value,
+            compile_tags!(format!("CsmTextSettings(text: 1, grid_fit: {grid_fit})")),
+            [
+                0x8C, 0x12, 0x01, 0x00, flags, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00,
+            ],
             "grid_fit: {grid_fit}"
         );
     }
