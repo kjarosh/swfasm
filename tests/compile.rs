@@ -315,25 +315,6 @@ fn raw_tag() {
 }
 
 #[test]
-fn raw_tag_from_file() {
-    assert_eq!(
-        compile_tags!(r#"Raw(code: 2, data: File("ab"))"#, &PathAsContents),
-        [0x82, 0x00, b'a', b'b']
-    );
-    assert_eq!(
-        compile_tags!(
-            r#"Raw(code: 2, force_long: true, data: File("a"))"#,
-            &PathAsContents
-        ),
-        [0xBF, 0x00, 0x01, 0x00, 0x00, 0x00, b'a']
-    );
-    assert_err!(
-        tag_err!(r#"Raw(code: 2, data: File("a.bin"))"#),
-        r#"tag #1: failed to read file "a.bin": files are not available"#
-    );
-}
-
-#[test]
 fn tag_code_errors() {
     assert_err!(
         tag_err!(r#"Raw(code: 1100, data: InlineBytes(""))"#),
@@ -351,6 +332,102 @@ fn unknown_fields() {
         tag_err!(r#"Raw(code: 1, data: InlineBytes(""), long: true)"#),
         "Unexpected field named `long` in `Raw`"
     );
+}
+
+/// Each field of a tag that takes data, with `{}` in place of the data.
+const DATA_FIELDS: &[&str] = &[
+    "Raw(code: 2, data: {})",
+    "Raw(code: 2, force_long: true, data: {})",
+    "PlaceObject2(depth: 1, clip_actions: [(events: [Load], actions: {})])",
+    "DefineBits(id: 1, data: {})",
+    "DefineButton(id: 1, records: [], actions: {})",
+    "JpegTables({})",
+    "DoAction({})",
+    "DefineBitsJpeg2(id: 1, data: {})",
+    "DoInitAction(sprite: 1, actions: {})",
+    "VideoFrame(stream: 1, frame: 0, data: {})",
+    "DebugId({})",
+    "DoAbc({})",
+    "Metadata({})",
+    "DoAbc2(data: {})",
+    "DefineBinaryData(id: 1, data: {})",
+];
+
+#[test]
+fn data_from_file() {
+    // Data from a file is written like the same data inline. The path is 16
+    // bytes long, as `DebugId` takes exactly 16 bytes.
+    for field in DATA_FIELDS {
+        assert_eq!(
+            compile_tags!(
+                field.replace("{}", r#"File("0123456789abcdef")"#),
+                &PathAsContents
+            ),
+            compile_tags!(
+                field.replace("{}", r#"InlineBytes("30313233343536373839616263646566")"#)
+            ),
+            "{field}"
+        );
+    }
+    // The path is passed to the provider exactly as it is written, with
+    // escapes resolved.
+    assert_eq!(
+        compile_tags!(r#"DoAction(File("./a/../\u{62}"))"#, &PathAsContents),
+        compile_tags!(r#"DoAction(InlineBytes("2e 2f 61 2f 2e 2e 2f 62"))"#)
+    );
+    assert_eq!(
+        compile_tags!(r#"DoAction(File(""))"#, &PathAsContents),
+        compile_tags!(r#"DoAction(InlineBytes(""))"#)
+    );
+    // Files are read in nested tags too.
+    assert_eq!(
+        compile_tags!(
+            r#"DefineSprite(id: 1, num_frames: 0, tags: [DoAction(File("ab"))])"#,
+            &PathAsContents
+        ),
+        compile_tags!(
+            r#"DefineSprite(id: 1, num_frames: 0, tags: [DoAction(InlineBytes("61 62"))])"#
+        )
+    );
+}
+
+#[test]
+fn data_file_errors() {
+    for field in DATA_FIELDS {
+        assert_err!(
+            tag_err!(field.replace("{}", r#"File("a.bin")"#)),
+            r#"failed to read file "a.bin": files are not available"#
+        );
+    }
+    // Errors of the provider are kept, and point to the nested tag.
+    assert_err!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [DefineSprite(id: 1, tags: [DoAction(File("a.bin"))])])"#,
+            &Failing
+        ),
+        r#"tag #0: tag #0: failed to read file "a.bin": no file named a.bin"#
+    );
+}
+
+#[test]
+fn data_errors() {
+    let err = |data: &str| tag_err!(format!("DoAction({data})"));
+    assert_err!(err(r#""07 00""#), "Expected identifier");
+    assert_err!(
+        err(r#"Hex("07 00")"#),
+        "Unexpected variant named `Hex` in enum `Data`"
+    );
+    assert_err!(err("File(1)"), "Expected string");
+    assert_err!(
+        err(r#"InlineBytes("070")"#),
+        r#"hex string "070" has an odd number of digits"#
+    );
+    assert_err!(
+        err(r#"InlineBytes(["00", "0"])"#),
+        r#"hex string "0" has an odd number of digits"#
+    );
+    assert_err!(err(r#"InlineBytes("0g")"#), "invalid hex digit 'g'");
+    assert_err!(err("InlineBytes([1, 2])"), "Expected string");
 }
 
 #[test]
@@ -397,31 +474,6 @@ fn do_action_bytes() {
 }
 
 #[test]
-fn do_action_errors() {
-    assert_err!(tag_err!(r#"DoAction("07 00")"#), "Expected identifier");
-    assert_err!(
-        tag_err!(r#"DoAction(Text("07 00"))"#),
-        "Unexpected variant named `Text` in enum `Data`"
-    );
-    assert_err!(
-        tag_err!(r#"DoAction(InlineBytes("070"))"#),
-        r#"hex string "070" has an odd number of digits"#
-    );
-}
-
-#[test]
-fn do_action_from_file() {
-    assert_eq!(
-        compile_tags!(r#"DoAction(File("ab"))"#, &PathAsContents),
-        [0x02, 0x03, b'a', b'b']
-    );
-    assert_err!(
-        tag_err!(r#"DoAction(File("a.bin"))"#),
-        r#"tag #1: failed to read file "a.bin": files are not available"#
-    );
-}
-
-#[test]
 fn invalid_values() {
     assert_err!(
         compile_err!("Swf(version: 10, stage: (width: 0.01, height: 1))"),
@@ -438,22 +490,6 @@ fn invalid_values() {
     assert_err!(
         tag_err!("SetBackgroundColor(0x1000000)"),
         "background color 0x1000000 is not in the 0xRRGGBB format"
-    );
-    assert_err!(
-        tag_err!(r#"Raw(code: 1, data: InlineBytes("0"))"#),
-        r#"hex string "0" has an odd number of digits"#
-    );
-    assert_err!(
-        tag_err!(r#"Raw(code: 1, data: InlineBytes(["00", "0"]))"#),
-        r#"hex string "0" has an odd number of digits"#
-    );
-    assert_err!(
-        tag_err!(r#"Raw(code: 1, data: InlineBytes("0g"))"#),
-        "invalid hex digit 'g'"
-    );
-    assert_err!(
-        tag_err!(r#"Raw(code: 1, data: InlineBytes([1, 2]))"#),
-        "Expected string"
     );
 }
 
@@ -1122,29 +1158,6 @@ fn clip_action_errors() {
         err(r#"[(events: [Click], actions: InlineBytes(""))]"#, 10),
         "Unexpected variant named `Click` in enum `ClipEvent`"
     );
-}
-
-#[test]
-fn clip_actions_from_files() {
-    // The actions are binary data, which can be read from files.
-    assert_eq!(
-        compile_tags!(
-            r#"PlaceObject2(
-                depth: 1,
-                move: true,
-                clip_actions: [(events: [Load], actions: File("ab"))],
-            )"#,
-            &PathAsContents
-        ),
-        [
-            0x97, 0x06, 0x81, 0x01, 0x00, // header, flags, depth
-            0x00, 0x00, // reserved
-            0x01, 0x00, 0x00, 0x00, // all events
-            0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, // Load, size
-            b'a', b'b', // actions
-            0x00, 0x00, 0x00, 0x00, // end
-        ]
-    );
     assert_err!(
         compile_err!(
             r#"Swf(version: 10, tags: [PlaceObject2(depth: 1, clip_actions: [
@@ -1258,29 +1271,6 @@ fn define_button_malformed() {
 }
 
 #[test]
-fn define_button_actions_from_file() {
-    assert_eq!(
-        compile_tags!(
-            r#"DefineButton(id: 1, records: [], actions: File("ab"))"#,
-            &PathAsContents
-        ),
-        [
-            0xC5, 0x01, // header
-            0x01, 0x00, // ID
-            0x00, // end of records
-            b'a', b'b', // actions
-        ]
-    );
-    assert_err!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [DefineButton(id: 1, records: [], actions: File("x"))])"#,
-            &Failing
-        ),
-        r#"tag #0: actions: failed to read file "x": no file named x"#
-    );
-}
-
-#[test]
 fn define_button_errors() {
     let record_err = |record: &str| {
         tag_err!(&format!(
@@ -1316,6 +1306,13 @@ fn define_button_errors() {
             r#"DefineButton(id: 1, records: [], actions: InlineBytes(""), track_as_menu: true)"#
         ),
         "Unexpected field named `track_as_menu` in `DefineButton`"
+    );
+    assert_err!(
+        compile_err!(
+            r#"Swf(version: 10, tags: [DefineButton(id: 1, records: [], actions: File("x"))])"#,
+            &Failing
+        ),
+        r#"tag #0: actions: failed to read file "x": no file named x"#
     );
 }
 
@@ -1425,77 +1422,7 @@ fn define_binary_data() {
 }
 
 #[test]
-fn define_binary_data_from_file() {
-    assert_eq!(
-        compile_tags!(
-            r#"DefineBinaryData(id: 1, data: File("ab"))"#,
-            &PathAsContents
-        ),
-        [0xC8, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, b'a', b'b']
-    );
-    // The path is passed to the provider exactly as it is written, with
-    // escapes resolved.
-    assert_eq!(
-        compile_tags!(
-            r#"DefineBinaryData(id: 1, data: File("./a/../\u{62}"))"#,
-            &PathAsContents
-        ),
-        [
-            [0xCE, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00].as_slice(),
-            b"./a/../b"
-        ]
-        .concat()
-    );
-    assert_eq!(
-        compile_tags!(
-            r#"DefineBinaryData(id: 1, data: File(""))"#,
-            &PathAsContents
-        ),
-        [0xC6, 0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
-    );
-    // Files are read in nested tags too.
-    assert_eq!(
-        compile_tags!(
-            r#"DefineSprite(id: 1, num_frames: 0, tags: [
-                DefineBinaryData(id: 2, data: File("c")),
-            ])"#,
-            &PathAsContents
-        ),
-        [
-            0xCD, 0x09, 0x01, 0x00, 0x00, 0x00, 0xC7, 0x15, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
-            b'c'
-        ]
-    );
-}
-
-#[test]
 fn define_binary_data_errors() {
-    assert_err!(
-        tag_err!(r#"DefineBinaryData(id: 1, data: File("a.bin"))"#),
-        r#"tag #1: failed to read file "a.bin": files are not available"#
-    );
-    // Errors of the provider are kept, and point to the nested tag.
-    assert_err!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [
-                DefineSprite(id: 1, tags: [DefineBinaryData(id: 2, data: File("a.bin"))]),
-            ])"#,
-            &Failing
-        ),
-        r#"tag #0: tag #0: failed to read file "a.bin": no file named a.bin"#
-    );
-    assert_err!(
-        tag_err!(r#"DefineBinaryData(id: 1, data: "01")"#),
-        "Expected identifier"
-    );
-    assert_err!(
-        tag_err!(r#"DefineBinaryData(id: 1, data: Hex("01"))"#),
-        "Unexpected variant named `Hex` in enum `Data`"
-    );
-    assert_err!(
-        tag_err!(r#"DefineBinaryData(id: 1, data: File(1))"#),
-        "Expected string"
-    );
     assert_err!(
         tag_err!(r#"DefineBinaryData(data: InlineBytes(""))"#),
         "Unexpected missing field named `id` in `DefineBinaryData`"
@@ -1520,10 +1447,6 @@ fn define_bits() {
     assert_eq!(
         compile_tags!(r#"DefineBits(id: 1, data: InlineBytes(""))"#),
         [0x82, 0x01, 0x01, 0x00]
-    );
-    assert_eq!(
-        compile_tags!(r#"DefineBits(id: 1, data: File("ab"))"#, &PathAsContents),
-        [0x84, 0x01, 0x01, 0x00, b'a', b'b']
     );
     // The longest data that fits in the short header form, and the shortest
     // that does not.
@@ -1561,13 +1484,6 @@ fn define_bits_jpeg_2() {
     assert_eq!(
         compile_tags!(r#"DefineBitsJpeg2(id: 1, data: InlineBytes(""))"#),
         [0x42, 0x05, 0x01, 0x00]
-    );
-    assert_eq!(
-        compile_tags!(
-            r#"DefineBitsJpeg2(id: 1, data: File("ab"))"#,
-            &PathAsContents
-        ),
-        [0x44, 0x05, 0x01, 0x00, b'a', b'b']
     );
     // The longest data that fits in the short header form, and the shortest
     // that does not.
@@ -1627,10 +1543,6 @@ fn jpeg_tables() {
         compile_tags!(r#"JpegTables(InlineBytes(""))"#),
         [0x00, 0x02]
     );
-    assert_eq!(
-        compile_tags!(r#"JpegTables(File("ab"))"#, &PathAsContents),
-        [0x02, 0x02, b'a', b'b']
-    );
     // The longest tables that fit in the short header form, and the shortest
     // that do not.
     assert_eq!(
@@ -1646,19 +1558,6 @@ fn jpeg_tables() {
             "00".repeat(63)
         )),
         [[0x3F, 0x02, 63, 0x00, 0x00, 0x00].as_slice(), &[0; 63]].concat()
-    );
-}
-
-#[test]
-fn jpeg_tables_errors() {
-    assert_err!(tag_err!(r#"JpegTables("ff d8")"#), "Expected identifier");
-    assert_err!(
-        tag_err!(r#"JpegTables(InlineBytes("f"))"#),
-        "odd number of digits"
-    );
-    assert_err!(
-        tag_err!(r#"JpegTables(File("a.bin"))"#),
-        r#"tag #1: failed to read file "a.bin": files are not available"#
     );
 }
 
@@ -1680,14 +1579,6 @@ fn define_bits_errors() {
     assert_err!(
         err(r#"id: 0x10000, data: InlineBytes("")"#),
         "Integer is out of bounds"
-    );
-    assert_err!(
-        err(r#"id: 1, data: InlineBytes("0")"#),
-        "odd number of digits"
-    );
-    assert_err!(
-        tag_err!(r#"DefineBits(id: 1, data: File("a.jpg"))"#),
-        r#"tag #1: failed to read file "a.jpg": files are not available"#
     );
 }
 
@@ -2157,30 +2048,7 @@ fn do_init_action() {
 }
 
 #[test]
-fn do_init_action_from_file() {
-    assert_eq!(
-        compile_tags!(
-            r#"DoInitAction(sprite: 1, actions: File("ab"))"#,
-            &PathAsContents
-        ),
-        [0xC4, 0x0E, 0x01, 0x00, b'a', b'b']
-    );
-    assert_err!(
-        tag_err!(r#"DoInitAction(sprite: 1, actions: File("a.bin"))"#),
-        r#"tag #1: failed to read file "a.bin": files are not available"#
-    );
-}
-
-#[test]
 fn do_init_action_errors() {
-    assert_err!(
-        tag_err!(r#"DoInitAction(sprite: 1, actions: "00")"#),
-        "Expected identifier"
-    );
-    assert_err!(
-        tag_err!(r#"DoInitAction(sprite: 1, actions: InlineBytes("0"))"#),
-        r#"hex string "0" has an odd number of digits"#
-    );
     assert_err!(
         tag_err!(r#"DoInitAction(sprite: 0x10000, actions: InlineBytes(""))"#),
         "Integer is out of bounds"
@@ -2458,21 +2326,6 @@ fn video_frame() {
 }
 
 #[test]
-fn video_frame_from_file() {
-    assert_eq!(
-        compile_tags!(
-            r#"VideoFrame(stream: 1, frame: 0, data: File("ab"))"#,
-            &PathAsContents
-        ),
-        [0x46, 0x0F, 0x01, 0x00, 0x00, 0x00, b'a', b'b']
-    );
-    assert_err!(
-        tag_err!(r#"VideoFrame(stream: 1, frame: 0, data: File("a.bin"))"#),
-        r#"tag #1: failed to read file "a.bin": files are not available"#
-    );
-}
-
-#[test]
 fn video_frame_errors() {
     let err = |fields: &str| tag_err!(format!("VideoFrame({fields})"));
     assert_err!(
@@ -2499,10 +2352,6 @@ fn video_frame_errors() {
         err(r#"stream: 1, frame: -1, data: InlineBytes("")"#),
         "Integer is out of bounds"
     );
-    assert_err!(
-        err(r#"stream: 1, frame: 0, data: InlineBytes("0")"#),
-        "odd number of digits"
-    );
 }
 
 #[test]
@@ -2517,10 +2366,6 @@ fn debug_id() {
             ],
         ]
         .concat()
-    );
-    assert_eq!(
-        compile_tags!(r#"DebugId(File("0123456789abcdef"))"#, &PathAsContents),
-        [[0xD0, 0x0F].as_slice(), b"0123456789abcdef"].concat()
     );
 }
 
@@ -2667,30 +2512,6 @@ fn do_abc() {
             &[0; 63],                                      // data
         ]
         .concat()
-    );
-}
-
-#[test]
-fn do_abc_from_file() {
-    assert_eq!(
-        compile_tags!(r#"DoAbc(File("ab"))"#, &PathAsContents),
-        [
-            0x02, 0x12, // header
-            b'a', b'b', // data
-        ]
-    );
-    assert_err!(
-        tag_err!(r#"DoAbc(File("a.abc"))"#),
-        r#"tag #1: failed to read file "a.abc": files are not available"#
-    );
-}
-
-#[test]
-fn do_abc_errors() {
-    assert_err!(tag_err!(r#"DoAbc("10 00")"#), "Expected identifier");
-    assert_err!(
-        tag_err!(r#"DoAbc(Hex("10 00"))"#),
-        "Unexpected variant named `Hex` in enum `Data`"
     );
 }
 
@@ -2935,29 +2756,12 @@ fn metadata() {
 }
 
 #[test]
-fn metadata_from_file() {
-    assert_eq!(
-        compile_tags!(r#"Metadata(File("ab"))"#, &PathAsContents),
-        [
-            0x43, 0x13, // header: code 77, length 3
-            b'a', b'b', // metadata
-            0x00, // null terminator
-        ]
-    );
-    assert_err!(
-        tag_err!(r#"Metadata(File("a.xml"))"#),
-        r#"tag #1: failed to read file "a.xml": files are not available"#
-    );
-}
-
-#[test]
 fn metadata_errors() {
     // The metadata is null-terminated, so it can't contain null bytes.
     assert_err!(
         tag_err!(r#"Metadata(InlineBytes("61 00 62"))"#),
         "tag #1: null byte at offset 1, which would end the string early"
     );
-    assert_err!(tag_err!(r#"Metadata("<a/>")"#), "Expected identifier");
     assert_err!(tag_err!("Metadata()"), "Expected identifier");
 }
 
@@ -3098,23 +2902,6 @@ fn do_abc_2_long() {
             &[0; 57], // data
         ]
         .concat()
-    );
-}
-
-#[test]
-fn do_abc_2_from_file() {
-    assert_eq!(
-        compile_tags!(r#"DoAbc2(name: "n", data: File("ab"))"#, &PathAsContents),
-        [
-            0x88, 0x14, // header
-            0x00, 0x00, 0x00, 0x00, // flags
-            b'n', 0x00, // name
-            b'a', b'b', // data
-        ]
-    );
-    assert_err!(
-        tag_err!(r#"DoAbc2(data: File("a.abc"))"#),
-        r#"tag #1: failed to read file "a.abc": files are not available"#
     );
 }
 
