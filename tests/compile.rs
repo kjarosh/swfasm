@@ -91,6 +91,35 @@ macro_rules! compile_err {
     };
 }
 
+/// Compiles the given tags, which must fail, and returns the error message.
+///
+/// The tags follow a `ShowFrame` tag, so that errors of the first one point to
+/// `tag #1`. The SWF version is 10 unless given.
+macro_rules! tag_err {
+    ($tags:expr) => {
+        tag_err!($tags, version: 10)
+    };
+    ($tags:expr, version: $version:expr) => {
+        compile_err!(format!(
+            "Swf(version: {}, tags: [ShowFrame, {}])",
+            $version, $tags
+        ))
+    };
+}
+
+/// Asserts that the given error message contains the expected text, and shows
+/// the message if it doesn't.
+macro_rules! assert_err {
+    ($err:expr, $expected:expr) => {{
+        let err: String = $err;
+        let expected: &str = &$expected;
+        assert!(
+            err.contains(expected),
+            "expected an error containing {expected:?}, got {err:?}"
+        );
+    }};
+}
+
 /// Provides files whose contents are their paths, so that tests can check which
 /// path is read.
 struct PathAsContents;
@@ -179,12 +208,12 @@ fn default_num_frames() {
         2
     );
     assert_eq!(num_frames(&"ShowFrame,".repeat(65535)), 65535);
-    assert!(
+    assert_err!(
         compile_err!(format!(
             "Swf(version: 10, tags: [{}])",
             "ShowFrame,".repeat(65536)
-        ))
-        .contains("too many frames")
+        )),
+        "too many frames"
     );
 }
 
@@ -298,31 +327,29 @@ fn raw_tag_from_file() {
         ),
         [0xBF, 0x00, 0x01, 0x00, 0x00, 0x00, b'a']
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 2, data: File("a.bin"))])"#)
-            .contains(r#"tag #0: failed to read file "a.bin": files are not available"#)
+    assert_err!(
+        tag_err!(r#"Raw(code: 2, data: File("a.bin"))"#),
+        r#"tag #1: failed to read file "a.bin": files are not available"#
     );
 }
 
 #[test]
 fn tag_code_errors() {
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1100, data: InlineBytes(""))])"#)
-            .contains("tag code 1100 does not fit in 10 bits")
+    assert_err!(
+        tag_err!(r#"Raw(code: 1100, data: InlineBytes(""))"#),
+        "tag code 1100 does not fit in 10 bits"
     );
 }
 
 #[test]
 fn unknown_fields() {
-    assert!(
-        compile_err!("Swf(version: 10, tags: [FileAttributes(as_3: true)])")
-            .contains("Unexpected field named `as_3` in `FileAttributes`")
+    assert_err!(
+        tag_err!("FileAttributes(as_3: true)"),
+        "Unexpected field named `as_3` in `FileAttributes`"
     );
-    assert!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes(""), long: true)])"#
-        )
-        .contains("Unexpected field named `long` in `Raw`")
+    assert_err!(
+        tag_err!(r#"Raw(code: 1, data: InlineBytes(""), long: true)"#),
+        "Unexpected field named `long` in `Raw`"
     );
 }
 
@@ -371,17 +398,14 @@ fn do_action_bytes() {
 
 #[test]
 fn do_action_errors() {
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoAction("07 00")])"#)
-            .contains("Expected identifier")
+    assert_err!(tag_err!(r#"DoAction("07 00")"#), "Expected identifier");
+    assert_err!(
+        tag_err!(r#"DoAction(Text("07 00"))"#),
+        "Unexpected variant named `Text` in enum `Data`"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoAction(Text("07 00"))])"#)
-            .contains("Unexpected variant named `Text` in enum `Data`")
-    );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoAction(InlineBytes("070"))])"#)
-            .contains(r#"hex string "070" has an odd number of digits"#)
+    assert_err!(
+        tag_err!(r#"DoAction(InlineBytes("070"))"#),
+        r#"hex string "070" has an odd number of digits"#
     );
 }
 
@@ -391,45 +415,45 @@ fn do_action_from_file() {
         compile_tags!(r#"DoAction(File("ab"))"#, &PathAsContents),
         [0x02, 0x03, b'a', b'b']
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoAction(File("a.bin"))])"#)
-            .contains(r#"tag #0: failed to read file "a.bin": files are not available"#)
+    assert_err!(
+        tag_err!(r#"DoAction(File("a.bin"))"#),
+        r#"tag #1: failed to read file "a.bin": files are not available"#
     );
 }
 
 #[test]
 fn invalid_values() {
-    assert!(
-        compile_err!("Swf(version: 10, stage: (width: 0.01, height: 1))")
-            .contains("stage: width: 0.01px is not a whole number of twips")
+    assert_err!(
+        compile_err!("Swf(version: 10, stage: (width: 0.01, height: 1))"),
+        "stage: width: 0.01px is not a whole number of twips"
     );
-    assert!(
-        compile_err!("Swf(version: 10, stage: (x: 53687091, width: 0.2, height: 1))")
-            .contains("stage: width: 53687091.2px is out of range")
+    assert_err!(
+        compile_err!("Swf(version: 10, stage: (x: 53687091, width: 0.2, height: 1))"),
+        "stage: width: 53687091.2px is out of range"
     );
-    assert!(
-        compile_err!("Swf(version: 10, frame_rate: 0.001)")
-            .contains("frame rate: 0.001 is not representable as an 8.8 fixed point number")
+    assert_err!(
+        compile_err!("Swf(version: 10, frame_rate: 0.001)"),
+        "frame rate: 0.001 is not representable as an 8.8 fixed point number"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [SetBackgroundColor(0x1000000)])")
-            .contains("background color 0x1000000 is not in the 0xRRGGBB format")
+    assert_err!(
+        tag_err!("SetBackgroundColor(0x1000000)"),
+        "background color 0x1000000 is not in the 0xRRGGBB format"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes("0"))])"#)
-            .contains(r#"hex string "0" has an odd number of digits"#)
+    assert_err!(
+        tag_err!(r#"Raw(code: 1, data: InlineBytes("0"))"#),
+        r#"hex string "0" has an odd number of digits"#
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes(["00", "0"]))])"#)
-            .contains(r#"hex string "0" has an odd number of digits"#)
+    assert_err!(
+        tag_err!(r#"Raw(code: 1, data: InlineBytes(["00", "0"]))"#),
+        r#"hex string "0" has an odd number of digits"#
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes("0g"))])"#)
-            .contains("invalid hex digit 'g'")
+    assert_err!(
+        tag_err!(r#"Raw(code: 1, data: InlineBytes("0g"))"#),
+        "invalid hex digit 'g'"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [Raw(code: 1, data: InlineBytes([1, 2]))])"#)
-            .contains("Expected string")
+    assert_err!(
+        tag_err!(r#"Raw(code: 1, data: InlineBytes([1, 2]))"#),
+        "Expected string"
     );
 }
 
@@ -500,38 +524,38 @@ fn define_sprite_num_frames() {
         num_frames("DefineSprite(id: 1, tags: [ShowFrame]), ShowFrame"),
         1
     );
-    assert!(
+    assert_err!(
         compile_err!(format!(
             "Swf(version: 10, tags: [DefineSprite(id: 1, tags: [{}])])",
             "ShowFrame,".repeat(65536)
-        ))
-        .contains("tag #0: too many frames")
+        )),
+        "tag #0: too many frames"
     );
 }
 
 #[test]
 fn define_sprite_errors() {
     // Errors in nested tags point to both the sprite and the nested tag.
-    assert!(
+    assert_err!(
         compile_err!(
             "Swf(version: 10, tags: [
                 ShowFrame,
                 DefineSprite(id: 1, tags: [ShowFrame, SetBackgroundColor(0x1000000)]),
             ])"
-        )
-        .contains("tag #1: tag #1: background color 0x1000000 is not in the 0xRRGGBB format")
+        ),
+        "tag #1: tag #1: background color 0x1000000 is not in the 0xRRGGBB format"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [DefineSprite(tags: [])])")
-            .contains("Unexpected missing field named `id` in `DefineSprite`")
+    assert_err!(
+        tag_err!("DefineSprite(tags: [])"),
+        "Unexpected missing field named `id` in `DefineSprite`"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [DefineSprite(id: 1)])")
-            .contains("Unexpected missing field named `tags` in `DefineSprite`")
+    assert_err!(
+        tag_err!("DefineSprite(id: 1)"),
+        "Unexpected missing field named `tags` in `DefineSprite`"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [DefineSprite(id: 1, frames: 1)])")
-            .contains("Unexpected field named `frames` in `DefineSprite`")
+    assert_err!(
+        tag_err!("DefineSprite(id: 1, frames: 1)"),
+        "Unexpected field named `frames` in `DefineSprite`"
     );
 }
 
@@ -551,17 +575,17 @@ fn remove_object() {
 
 #[test]
 fn remove_object_errors() {
-    assert!(
-        compile_err!("Swf(version: 10, tags: [RemoveObject(depth: 1)])")
-            .contains("Unexpected missing field named `character` in `RemoveObject`")
+    assert_err!(
+        tag_err!("RemoveObject(depth: 1)"),
+        "Unexpected missing field named `character` in `RemoveObject`"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [RemoveObject2()])")
-            .contains("Unexpected missing field named `depth` in `RemoveObject2`")
+    assert_err!(
+        tag_err!("RemoveObject2()"),
+        "Unexpected missing field named `depth` in `RemoveObject2`"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [RemoveObject2(character: 1, depth: 1)])")
-            .contains("Unexpected field named `character` in `RemoveObject2`")
+    assert_err!(
+        tag_err!("RemoveObject2(character: 1, depth: 1)"),
+        "Unexpected field named `character` in `RemoveObject2`"
     );
 }
 
@@ -673,82 +697,86 @@ fn place_object_matrix() {
 
 #[test]
 fn place_object_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
-    assert!(
-        err("PlaceObject(character: 1, depth: 1, color_transform: (alpha_mult: 0.5))")
-            .contains("tag #1: color_transform: PlaceObject cannot encode non-default alpha terms")
+    assert_err!(
+        tag_err!("PlaceObject(character: 1, depth: 1, color_transform: (alpha_mult: 0.5))"),
+        "tag #1: color_transform: PlaceObject cannot encode non-default alpha terms"
     );
-    assert!(
-        err("PlaceObject(character: 1, depth: 1, color_transform: (alpha_add: 1))")
-            .contains("tag #1: color_transform: PlaceObject cannot encode non-default alpha terms")
+    assert_err!(
+        tag_err!("PlaceObject(character: 1, depth: 1, color_transform: (alpha_add: 1))"),
+        "tag #1: color_transform: PlaceObject cannot encode non-default alpha terms"
     );
-    assert!(
-        err("PlaceObject(depth: 1)")
-            .contains("Unexpected missing field named `character` in `PlaceObject`")
+    assert_err!(
+        tag_err!("PlaceObject(depth: 1)"),
+        "Unexpected missing field named `character` in `PlaceObject`"
     );
-    assert!(
-        err("PlaceObject(character: 1, depth: 1, name: \"a\")")
-            .contains("Unexpected field named `name` in `PlaceObject`")
+    assert_err!(
+        tag_err!("PlaceObject(character: 1, depth: 1, name: \"a\")"),
+        "Unexpected field named `name` in `PlaceObject`"
     );
-    assert!(
-        err("PlaceObject(character: 1, depth: 1, matrix: (scale: 1))")
-            .contains("Unexpected field named `scale` in `Matrix`")
+    assert_err!(
+        tag_err!("PlaceObject(character: 1, depth: 1, matrix: (scale: 1))"),
+        "Unexpected field named `scale` in `Matrix`"
     );
-    assert!(
-        err("PlaceObject(character: 1, depth: 1, color_transform: (red: 1))")
-            .contains("Unexpected field named `red` in `ColorTransform`")
+    assert_err!(
+        tag_err!("PlaceObject(character: 1, depth: 1, color_transform: (red: 1))"),
+        "Unexpected field named `red` in `ColorTransform`"
     );
 }
 
 #[test]
 fn place_object_invalid_values() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [{tag}])"));
     let matrix_err = |matrix: &str| {
-        err(&format!(
+        tag_err!(&format!(
             "PlaceObject(character: 1, depth: 1, matrix: ({matrix}))"
         ))
     };
-    assert!(
-        matrix_err("scale_x: 0.1")
-            .contains("matrix: scale_x: 0.1 is not representable as a 16.16 fixed point number")
+    assert_err!(
+        matrix_err("scale_x: 0.1"),
+        "matrix: scale_x: 0.1 is not representable as a 16.16 fixed point number"
     );
-    assert!(matrix_err("scale_y: 16384").contains("matrix: scale_y: 16384 is out of range"));
-    assert!(
-        matrix_err("rotate_skew0: -16384.0000152587890625")
-            .contains("matrix: rotate_skew0: -16384.00001525879 is out of range")
+    assert_err!(
+        matrix_err("scale_y: 16384"),
+        "matrix: scale_y: 16384 is out of range"
     );
-    assert!(
-        matrix_err("rotate_skew1: 1e10")
-            .contains("matrix: rotate_skew1: 10000000000 is not representable")
+    assert_err!(
+        matrix_err("rotate_skew0: -16384.0000152587890625"),
+        "matrix: rotate_skew0: -16384.00001525879 is out of range"
     );
-    assert!(
-        matrix_err("translate_x: 0.01")
-            .contains("matrix: translate_x: 0.01px is not a whole number of twips")
+    assert_err!(
+        matrix_err("rotate_skew1: 1e10"),
+        "matrix: rotate_skew1: 10000000000 is not representable"
     );
-    assert!(
-        matrix_err("translate_y: 53687091.2")
-            .contains("matrix: translate_y: 53687091.2px is out of range")
+    assert_err!(
+        matrix_err("translate_x: 0.01"),
+        "matrix: translate_x: 0.01px is not a whole number of twips"
     );
-    assert!(
-        err("PlaceObject(character: 1, depth: 1, matrix: (translate_x: -53687091.25))")
-            .contains("matrix: translate_x: -53687091.25px is out of range")
+    assert_err!(
+        matrix_err("translate_y: 53687091.2"),
+        "matrix: translate_y: 53687091.2px is out of range"
+    );
+    assert_err!(
+        tag_err!("PlaceObject(character: 1, depth: 1, matrix: (translate_x: -53687091.25))"),
+        "matrix: translate_x: -53687091.25px is out of range"
     );
 
     let color_err = |color_transform: &str| {
-        err(&format!(
+        tag_err!(&format!(
             "PlaceObject(character: 1, depth: 1, color_transform: ({color_transform}))"
         ))
     };
-    assert!(color_err("red_mult: 0.001").contains(
+    assert_err!(
+        color_err("red_mult: 0.001"),
         "color_transform: red_mult: 0.001 is not representable as an 8.8 fixed point number"
-    ));
-    assert!(
-        color_err("green_mult: 64").contains("color_transform: green_mult: 64 is out of range")
     );
-    assert!(
-        color_err("blue_add: 16384").contains("color_transform: blue_add: 16384 is out of range")
+    assert_err!(
+        color_err("green_mult: 64"),
+        "color_transform: green_mult: 64 is out of range"
     );
-    assert!(color_err("red_add: 32768").contains("Integer is out of bounds"));
+    assert_err!(
+        color_err("blue_add: 16384"),
+        "color_transform: blue_add: 16384 is out of range"
+    );
+    assert_err!(color_err("red_add: 32768"), "Integer is out of bounds");
 }
 
 #[test]
@@ -1034,68 +1062,65 @@ fn all_clip_events() {
         ]
     );
 
-    let err =
-        |tag: &str, version: u8| compile_err!(format!("Swf(version: {version}, tags: [{tag}])"));
-    assert!(
+    let err = |tag: &str, version: u8| tag_err!(tag, version: version);
+    assert_err!(
         err(
             &format!("PlaceObject2(depth: 1, all_clip_events: [KeyPress], {clip_actions})"),
             5
-        )
-        .contains("tag #0: all_clip_events: KeyPress events are not supported before SWF 6")
+        ),
+        "tag #1: all_clip_events: KeyPress events are not supported before SWF 6"
     );
-    assert!(
-        err("PlaceObject2(depth: 1, all_clip_events: [Click])", 10)
-            .contains("Unexpected variant named `Click` in enum `ClipEvent`")
+    assert_err!(
+        err("PlaceObject2(depth: 1, all_clip_events: [Click])", 10),
+        "Unexpected variant named `Click` in enum `ClipEvent`"
     );
 }
 
 #[test]
 fn place_object_2_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
-    assert!(
-        err("PlaceObject2(character: 1)")
-            .contains("Unexpected missing field named `depth` in `PlaceObject2`")
+    assert_err!(
+        tag_err!("PlaceObject2(character: 1)"),
+        "Unexpected missing field named `depth` in `PlaceObject2`"
     );
-    assert!(
-        err(r#"PlaceObject2(depth: 1, name: "a\0b")"#)
-            .contains(r#"tag #1: name: "a\0b" contains a null character"#)
+    assert_err!(
+        tag_err!(r#"PlaceObject2(depth: 1, name: "a\0b")"#),
+        r#"tag #1: name: "a\0b" contains a null character"#
     );
     // Unlike in PlaceObject, alpha terms are checked like the others.
-    assert!(
-        err("PlaceObject2(depth: 1, color_transform: (alpha_mult: -64.00390625))")
-            .contains("tag #1: color_transform: alpha_mult: -64.00390625 is out of range")
+    assert_err!(
+        tag_err!("PlaceObject2(depth: 1, color_transform: (alpha_mult: -64.00390625))"),
+        "tag #1: color_transform: alpha_mult: -64.00390625 is out of range"
     );
-    assert!(
-        err("PlaceObject2(depth: 1, color_transform: (alpha_add: -16385))")
-            .contains("tag #1: color_transform: alpha_add: -16385 is out of range")
+    assert_err!(
+        tag_err!("PlaceObject2(depth: 1, color_transform: (alpha_add: -16385))"),
+        "tag #1: color_transform: alpha_add: -16385 is out of range"
     );
 }
 
 #[test]
 fn clip_action_errors() {
     let err = |clip_actions: &str, version: u8| {
-        compile_err!(format!(
-            "Swf(version: {version}, tags: [PlaceObject2(depth: 1, clip_actions: {clip_actions})])"
-        ))
+        tag_err!(
+            format!("PlaceObject2(depth: 1, clip_actions: {clip_actions})"),
+            version: version
+        )
     };
     for event in ["DragOut", "KeyPress", "Construct"] {
-        assert!(
+        assert_err!(
             err(
                 &format!(r#"[(events: [{event}], key_code: 1, actions: InlineBytes(""))]"#),
                 5
-            )
-            .contains(&format!(
-                "clip action #0: {event} events are not supported before SWF 6"
-            ))
+            ),
+            &format!("clip action #0: {event} events are not supported before SWF 6")
         );
     }
-    assert!(
-        err(r#"[(events: [Load])]"#, 10)
-            .contains("Unexpected missing field named `actions` in `ClipAction`")
+    assert_err!(
+        err(r#"[(events: [Load])]"#, 10),
+        "Unexpected missing field named `actions` in `ClipAction`"
     );
-    assert!(
-        err(r#"[(events: [Click], actions: InlineBytes(""))]"#, 10)
-            .contains("Unexpected variant named `Click` in enum `ClipEvent`")
+    assert_err!(
+        err(r#"[(events: [Click], actions: InlineBytes(""))]"#, 10),
+        "Unexpected variant named `Click` in enum `ClipEvent`"
     );
 }
 
@@ -1120,17 +1145,15 @@ fn clip_actions_from_files() {
             0x00, 0x00, 0x00, 0x00, // end
         ]
     );
-    assert!(
+    assert_err!(
         compile_err!(
             r#"Swf(version: 10, tags: [PlaceObject2(depth: 1, clip_actions: [
                 (events: [Load], actions: InlineBytes("")),
                 (events: [Load], actions: File("x")),
             ])])"#,
             &Failing
-        )
-        .contains(
-            r#"tag #0: clip_actions: clip action #1: failed to read file "x": no file named x"#
-        )
+        ),
+        r#"tag #0: clip_actions: clip action #1: failed to read file "x": no file named x"#
     );
 }
 
@@ -1248,20 +1271,19 @@ fn define_button_actions_from_file() {
             b'a', b'b', // actions
         ]
     );
-    assert!(
+    assert_err!(
         compile_err!(
             r#"Swf(version: 10, tags: [DefineButton(id: 1, records: [], actions: File("x"))])"#,
             &Failing
-        )
-        .contains(r#"tag #0: actions: failed to read file "x": no file named x"#)
+        ),
+        r#"tag #0: actions: failed to read file "x": no file named x"#
     );
 }
 
 #[test]
 fn define_button_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
     let record_err = |record: &str| {
-        err(&format!(
+        tag_err!(&format!(
             r#"DefineButton(
                 id: 1,
                 records: [(states: [Up], character: 1, depth: 1), {record}],
@@ -1269,30 +1291,31 @@ fn define_button_errors() {
             )"#
         ))
     };
-    assert!(
-        record_err("(states: [Up], character: 1, depth: 2, matrix: (scale_x: 0.1))").contains(
-            "tag #1: records: record #1: matrix: scale_x: 0.1 is not representable as a 16.16 fixed point number"
-        )
+    assert_err!(
+        record_err("(states: [Up], character: 1, depth: 2, matrix: (scale_x: 0.1))"),
+        "tag #1: records: record #1: matrix: scale_x: 0.1 is not representable as a 16.16 fixed point number"
     );
-    assert!(
-        record_err("(states: [Hit], character: 1, depth: 2)")
-            .contains("Unexpected variant named `Hit` in enum `ButtonState`")
+    assert_err!(
+        record_err("(states: [Hit], character: 1, depth: 2)"),
+        "Unexpected variant named `Hit` in enum `ButtonState`"
     );
-    assert!(
-        record_err("(character: 1, depth: 2)")
-            .contains("Unexpected missing field named `states` in `ButtonRecord`")
+    assert_err!(
+        record_err("(character: 1, depth: 2)"),
+        "Unexpected missing field named `states` in `ButtonRecord`"
     );
-    assert!(
-        record_err("(states: [Up], character: 1, depth: 2, color_transform: ())")
-            .contains("Unexpected field named `color_transform` in `ButtonRecord`")
+    assert_err!(
+        record_err("(states: [Up], character: 1, depth: 2, color_transform: ())"),
+        "Unexpected field named `color_transform` in `ButtonRecord`"
     );
-    assert!(
-        err("DefineButton(id: 1, records: [])")
-            .contains("Unexpected missing field named `actions` in `DefineButton`")
+    assert_err!(
+        tag_err!("DefineButton(id: 1, records: [])"),
+        "Unexpected missing field named `actions` in `DefineButton`"
     );
-    assert!(
-        err(r#"DefineButton(id: 1, records: [], actions: InlineBytes(""), track_as_menu: true)"#)
-            .contains("Unexpected field named `track_as_menu` in `DefineButton`")
+    assert_err!(
+        tag_err!(
+            r#"DefineButton(id: 1, records: [], actions: InlineBytes(""), track_as_menu: true)"#
+        ),
+        "Unexpected field named `track_as_menu` in `DefineButton`"
     );
 }
 
@@ -1335,33 +1358,30 @@ fn define_scene_and_frame_label_data() {
 
 #[test]
 fn define_scene_and_frame_label_data_errors() {
-    let err = |fields: &str| {
-        compile_err!(format!(
-            "Swf(version: 10, tags: [DefineSceneAndFrameLabelData({fields})])"
-        ))
-    };
-    assert!(
-        err(r#"scenes: [(name: "a")]"#)
-            .contains("Unexpected missing field named `frame` in `NamedFrame`")
+    let err = |fields: &str| tag_err!(format!("DefineSceneAndFrameLabelData({fields})"));
+    assert_err!(
+        err(r#"scenes: [(name: "a")]"#),
+        "Unexpected missing field named `frame` in `NamedFrame`"
     );
-    assert!(
-        err("scenes: [(frame: 1)]")
-            .contains("Unexpected missing field named `name` in `NamedFrame`")
+    assert_err!(
+        err("scenes: [(frame: 1)]"),
+        "Unexpected missing field named `name` in `NamedFrame`"
     );
-    assert!(
-        err(r#"scenes: [(frame: 1, label: "a")]"#)
-            .contains("Unexpected field named `label` in `NamedFrame`")
+    assert_err!(
+        err(r#"scenes: [(frame: 1, label: "a")]"#),
+        "Unexpected field named `label` in `NamedFrame`"
     );
-    assert!(
-        err(r#"scenes: [(frame: 1, name: "a"), (frame: 2, name: "b\0c")]"#)
-            .contains(r#"scenes: frame #1: name: "b\0c" contains a null character"#)
+    assert_err!(
+        err(r#"scenes: [(frame: 1, name: "a"), (frame: 2, name: "b\0c")]"#),
+        r#"scenes: frame #1: name: "b\0c" contains a null character"#
     );
-    assert!(
-        err(r#"frame_labels: [(frame: 1, name: "a\0b")]"#)
-            .contains(r#"frame_labels: frame #0: name: "a\0b" contains a null character"#)
+    assert_err!(
+        err(r#"frame_labels: [(frame: 1, name: "a\0b")]"#),
+        r#"frame_labels: frame #0: name: "a\0b" contains a null character"#
     );
-    assert!(
-        err(r#"scenes: [(frame: 4294967296, name: "a")]"#).contains("Integer is out of bounds")
+    assert_err!(
+        err(r#"scenes: [(frame: 4294967296, name: "a")]"#),
+        "Integer is out of bounds"
     );
 }
 
@@ -1450,41 +1470,39 @@ fn define_binary_data_from_file() {
 
 #[test]
 fn define_binary_data_errors() {
-    assert!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [ShowFrame, DefineBinaryData(id: 1, data: File("a.bin"))])"#
-        )
-        .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    assert_err!(
+        tag_err!(r#"DefineBinaryData(id: 1, data: File("a.bin"))"#),
+        r#"tag #1: failed to read file "a.bin": files are not available"#
     );
     // Errors of the provider are kept, and point to the nested tag.
-    assert!(
+    assert_err!(
         compile_err!(
             r#"Swf(version: 10, tags: [
                 DefineSprite(id: 1, tags: [DefineBinaryData(id: 2, data: File("a.bin"))]),
             ])"#,
             &Failing
-        )
-        .contains(r#"tag #0: tag #0: failed to read file "a.bin": no file named a.bin"#)
+        ),
+        r#"tag #0: tag #0: failed to read file "a.bin": no file named a.bin"#
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: "01")])"#)
-            .contains("Expected identifier")
+    assert_err!(
+        tag_err!(r#"DefineBinaryData(id: 1, data: "01")"#),
+        "Expected identifier"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: Hex("01"))])"#)
-            .contains("Unexpected variant named `Hex` in enum `Data`")
+    assert_err!(
+        tag_err!(r#"DefineBinaryData(id: 1, data: Hex("01"))"#),
+        "Unexpected variant named `Hex` in enum `Data`"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: File(1))])"#)
-            .contains("Expected string")
+    assert_err!(
+        tag_err!(r#"DefineBinaryData(id: 1, data: File(1))"#),
+        "Expected string"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DefineBinaryData(data: InlineBytes(""))])"#)
-            .contains("Unexpected missing field named `id` in `DefineBinaryData`")
+    assert_err!(
+        tag_err!(r#"DefineBinaryData(data: InlineBytes(""))"#),
+        "Unexpected missing field named `id` in `DefineBinaryData`"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [DefineBinaryData(id: 1)])")
-            .contains("Unexpected missing field named `data` in `DefineBinaryData`")
+    assert_err!(
+        tag_err!("DefineBinaryData(id: 1)"),
+        "Unexpected missing field named `data` in `DefineBinaryData`"
     );
 }
 
@@ -1575,21 +1593,23 @@ fn define_bits_jpeg_2() {
 
 #[test]
 fn define_bits_jpeg_2_errors() {
-    let err = |fields: &str| {
-        compile_err!(format!(
-            "Swf(version: 10, tags: [DefineBitsJpeg2({fields})])"
-        ))
-    };
-    assert!(
-        err(r#"data: InlineBytes("")"#)
-            .contains("Unexpected missing field named `id` in `DefineBitsJpeg2`")
+    let err = |fields: &str| tag_err!(format!("DefineBitsJpeg2({fields})"));
+    assert_err!(
+        err(r#"data: InlineBytes("")"#),
+        "Unexpected missing field named `id` in `DefineBitsJpeg2`"
     );
-    assert!(err("id: 1").contains("Unexpected missing field named `data` in `DefineBitsJpeg2`"));
-    assert!(
-        err(r#"id: 1, jpeg: InlineBytes("")"#)
-            .contains("Unexpected field named `jpeg` in `DefineBitsJpeg2`")
+    assert_err!(
+        err("id: 1"),
+        "Unexpected missing field named `data` in `DefineBitsJpeg2`"
     );
-    assert!(err(r#"id: -1, data: InlineBytes("")"#).contains("Integer is out of bounds"));
+    assert_err!(
+        err(r#"id: 1, jpeg: InlineBytes("")"#),
+        "Unexpected field named `jpeg` in `DefineBitsJpeg2`"
+    );
+    assert_err!(
+        err(r#"id: -1, data: InlineBytes("")"#),
+        "Integer is out of bounds"
+    );
 }
 
 #[test]
@@ -1631,40 +1651,43 @@ fn jpeg_tables() {
 
 #[test]
 fn jpeg_tables_errors() {
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [JpegTables("ff d8")])"#)
-            .contains("Expected identifier")
+    assert_err!(tag_err!(r#"JpegTables("ff d8")"#), "Expected identifier");
+    assert_err!(
+        tag_err!(r#"JpegTables(InlineBytes("f"))"#),
+        "odd number of digits"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [JpegTables(InlineBytes("f"))])"#)
-            .contains("odd number of digits")
-    );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, JpegTables(File("a.bin"))])"#)
-            .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    assert_err!(
+        tag_err!(r#"JpegTables(File("a.bin"))"#),
+        r#"tag #1: failed to read file "a.bin": files are not available"#
     );
 }
 
 #[test]
 fn define_bits_errors() {
-    let err =
-        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [DefineBits({fields})])"));
-    assert!(
-        err(r#"data: InlineBytes("")"#)
-            .contains("Unexpected missing field named `id` in `DefineBits`")
+    let err = |fields: &str| tag_err!(format!("DefineBits({fields})"));
+    assert_err!(
+        err(r#"data: InlineBytes("")"#),
+        "Unexpected missing field named `id` in `DefineBits`"
     );
-    assert!(err("id: 1").contains("Unexpected missing field named `data` in `DefineBits`"));
-    assert!(
-        err(r#"id: 1, jpeg: InlineBytes("")"#)
-            .contains("Unexpected field named `jpeg` in `DefineBits`")
+    assert_err!(
+        err("id: 1"),
+        "Unexpected missing field named `data` in `DefineBits`"
     );
-    assert!(err(r#"id: 0x10000, data: InlineBytes("")"#).contains("Integer is out of bounds"));
-    assert!(err(r#"id: 1, data: InlineBytes("0")"#).contains("odd number of digits"));
-    assert!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [ShowFrame, DefineBits(id: 1, data: File("a.jpg"))])"#
-        )
-        .contains(r#"tag #1: failed to read file "a.jpg": files are not available"#)
+    assert_err!(
+        err(r#"id: 1, jpeg: InlineBytes("")"#),
+        "Unexpected field named `jpeg` in `DefineBits`"
+    );
+    assert_err!(
+        err(r#"id: 0x10000, data: InlineBytes("")"#),
+        "Integer is out of bounds"
+    );
+    assert_err!(
+        err(r#"id: 1, data: InlineBytes("0")"#),
+        "odd number of digits"
+    );
+    assert_err!(
+        tag_err!(r#"DefineBits(id: 1, data: File("a.jpg"))"#),
+        r#"tag #1: failed to read file "a.jpg": files are not available"#
     );
 }
 
@@ -1689,9 +1712,15 @@ fn protect() {
 
 #[test]
 fn protect_errors() {
-    let err = |fields: &str| compile_err!(format!("Swf(version: 10, tags: [Protect({fields})])"));
-    assert!(err(r#"md5: "a""#).contains("Unexpected field named `md5` in `Protect`"));
-    assert!(err(r#"password: "a\0b""#).contains(r#"password: "a\0b" contains a null character"#));
+    let err = |fields: &str| tag_err!(format!("Protect({fields})"));
+    assert_err!(
+        err(r#"md5: "a""#),
+        "Unexpected field named `md5` in `Protect`"
+    );
+    assert_err!(
+        err(r#"password: "a\0b""#),
+        r#"password: "a\0b" contains a null character"#
+    );
 }
 
 #[test]
@@ -1718,19 +1747,26 @@ fn name_character() {
 
 #[test]
 fn name_character_errors() {
-    let err =
-        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [NameCharacter({fields})])"));
-    assert!(
-        err(r#"name: "a""#)
-            .contains("Unexpected missing field named `character` in `NameCharacter`")
+    let err = |fields: &str| tag_err!(format!("NameCharacter({fields})"));
+    assert_err!(
+        err(r#"name: "a""#),
+        "Unexpected missing field named `character` in `NameCharacter`"
     );
-    assert!(
-        err("character: 1").contains("Unexpected missing field named `name` in `NameCharacter`")
+    assert_err!(
+        err("character: 1"),
+        "Unexpected missing field named `name` in `NameCharacter`"
     );
-    assert!(err(r#"id: 1, name: "a""#).contains("Unexpected field named `id` in `NameCharacter`"));
-    assert!(err(r#"character: 0x10000, name: "a""#).contains("Integer is out of bounds"));
-    assert!(
-        err(r#"character: 1, name: "a\0b""#).contains(r#"name: "a\0b" contains a null character"#)
+    assert_err!(
+        err(r#"id: 1, name: "a""#),
+        "Unexpected field named `id` in `NameCharacter`"
+    );
+    assert_err!(
+        err(r#"character: 0x10000, name: "a""#),
+        "Integer is out of bounds"
+    );
+    assert_err!(
+        err(r#"character: 1, name: "a\0b""#),
+        r#"name: "a\0b" contains a null character"#
     );
 }
 
@@ -1761,21 +1797,22 @@ fn product_info() {
 
 #[test]
 fn product_info_errors() {
-    let err =
-        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [ProductInfo({fields})])"));
+    let err = |fields: &str| tag_err!(format!("ProductInfo({fields})"));
     let all_fields = "product_id: 1, edition: 2, major_version: 3, minor_version: 4, \
                       build_number: 5, compilation_date: 6";
-    assert!(
-        err("edition: 2, major_version: 3, minor_version: 4, build_number: 5, compilation_date: 6")
-            .contains("Unexpected missing field named `product_id` in `ProductInfo`")
+    assert_err!(
+        err("edition: 2, major_version: 3, minor_version: 4, build_number: 5, compilation_date: 6"),
+        "Unexpected missing field named `product_id` in `ProductInfo`"
     );
-    assert!(
-        err(&format!("{all_fields}, version: 7"))
-            .contains("Unexpected field named `version` in `ProductInfo`")
+    assert_err!(
+        err(&format!("{all_fields}, version: 7")),
+        "Unexpected field named `version` in `ProductInfo`"
     );
-    assert!(
-        err("product_id: 1, edition: 2, major_version: 256, minor_version: 4, build_number: 5, compilation_date: 6")
-            .contains("Integer is out of bounds")
+    assert_err!(
+        err(
+            "product_id: 1, edition: 2, major_version: 256, minor_version: 4, build_number: 5, compilation_date: 6"
+        ),
+        "Integer is out of bounds"
     );
 }
 
@@ -1889,35 +1926,32 @@ fn frame_label() {
 
 #[test]
 fn frame_label_errors() {
-    let err = |tag: &str, version: u8| {
-        compile_err!(format!("Swf(version: {version}, tags: [ShowFrame, {tag}])"))
-    };
-    assert!(
-        err(r#"FrameLabel(label: "a\0b")"#, 10)
-            .contains(r#"tag #1: label: "a\0b" contains a null character"#)
+    assert_err!(
+        tag_err!(r#"FrameLabel(label: "a\0b")"#),
+        r#"tag #1: label: "a\0b" contains a null character"#
     );
-    assert!(
-        err(r#"FrameLabel(label: "a", anchor: true)"#, 5)
-            .contains("tag #1: anchor: named anchors are not supported before SWF 6")
+    assert_err!(
+        tag_err!(r#"FrameLabel(label: "a", anchor: true)"#, version: 5),
+        "tag #1: anchor: named anchors are not supported before SWF 6"
     );
     // The version of the SWF applies in sprites too.
-    assert!(
-        err(
+    assert_err!(
+        tag_err!(
             r#"DefineSprite(id: 1, tags: [FrameLabel(label: "a", anchor: true)])"#,
-            5
-        )
-        .contains("tag #1: tag #0: anchor: named anchors are not supported before SWF 6")
+            version: 5
+        ),
+        "tag #1: tag #0: anchor: named anchors are not supported before SWF 6"
     );
-    assert!(
-        err("FrameLabel(anchor: true)", 10)
-            .contains("Unexpected missing field named `label` in `FrameLabel`")
+    assert_err!(
+        tag_err!("FrameLabel(anchor: true)"),
+        "Unexpected missing field named `label` in `FrameLabel`"
     );
-    assert!(
-        err(r#"FrameLabel(label: "a", named_anchor: true)"#, 10)
-            .contains("Unexpected field named `named_anchor` in `FrameLabel`")
+    assert_err!(
+        tag_err!(r#"FrameLabel(label: "a", named_anchor: true)"#),
+        "Unexpected field named `named_anchor` in `FrameLabel`"
     );
-    assert!(err("FrameLabel(1)", 10).contains("Expected a label or a struct"));
-    assert!(err("FrameLabel()", 10).contains("Expected a label or a struct"));
+    assert_err!(tag_err!("FrameLabel(1)"), "Expected a label or a struct");
+    assert_err!(tag_err!("FrameLabel()"), "Expected a label or a struct");
 }
 
 #[test]
@@ -2032,29 +2066,28 @@ fn export_assets_long() {
 
 #[test]
 fn export_assets_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
-    assert!(
-        err(r#"ExportAssets([(character: 1, name: "a"), (character: 2, name: "b\0c")])"#)
-            .contains(r#"tag #1: asset #1: name: "b\0c" contains a null character"#)
+    assert_err!(
+        tag_err!(r#"ExportAssets([(character: 1, name: "a"), (character: 2, name: "b\0c")])"#),
+        r#"tag #1: asset #1: name: "b\0c" contains a null character"#
     );
-    assert!(
-        err(&format!(
+    assert_err!(
+        tag_err!(&format!(
             "ExportAssets([{}])",
             r#"(character: 1, name: ""),"#.repeat(0x10000)
-        ))
-        .contains("tag #1: too many assets: 65536, at most 65535")
+        )),
+        "tag #1: too many assets: 65536, at most 65535"
     );
-    assert!(
-        err(r#"ExportAssets([(name: "a")])"#)
-            .contains("Unexpected missing field named `character` in `ExportedAsset`")
+    assert_err!(
+        tag_err!(r#"ExportAssets([(name: "a")])"#),
+        "Unexpected missing field named `character` in `ExportedAsset`"
     );
-    assert!(
-        err("ExportAssets([(character: 1)])")
-            .contains("Unexpected missing field named `name` in `ExportedAsset`")
+    assert_err!(
+        tag_err!("ExportAssets([(character: 1)])"),
+        "Unexpected missing field named `name` in `ExportedAsset`"
     );
-    assert!(
-        err(r#"ExportAssets([(id: 1, name: "a")])"#)
-            .contains("Unexpected field named `id` in `ExportedAsset`")
+    assert_err!(
+        tag_err!(r#"ExportAssets([(id: 1, name: "a")])"#),
+        "Unexpected field named `id` in `ExportedAsset`"
     );
 }
 
@@ -2132,43 +2165,37 @@ fn do_init_action_from_file() {
         ),
         [0xC4, 0x0E, 0x01, 0x00, b'a', b'b']
     );
-    assert!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [ShowFrame, DoInitAction(sprite: 1, actions: File("a.bin"))])"#
-        )
-        .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    assert_err!(
+        tag_err!(r#"DoInitAction(sprite: 1, actions: File("a.bin"))"#),
+        r#"tag #1: failed to read file "a.bin": files are not available"#
     );
 }
 
 #[test]
 fn do_init_action_errors() {
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoInitAction(sprite: 1, actions: "00")])"#)
-            .contains("Expected identifier")
+    assert_err!(
+        tag_err!(r#"DoInitAction(sprite: 1, actions: "00")"#),
+        "Expected identifier"
     );
-    assert!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [DoInitAction(sprite: 1, actions: InlineBytes("0"))])"#
-        )
-        .contains(r#"hex string "0" has an odd number of digits"#)
+    assert_err!(
+        tag_err!(r#"DoInitAction(sprite: 1, actions: InlineBytes("0"))"#),
+        r#"hex string "0" has an odd number of digits"#
     );
-    assert!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [DoInitAction(sprite: 0x10000, actions: InlineBytes(""))])"#
-        )
-        .contains("Integer is out of bounds")
+    assert_err!(
+        tag_err!(r#"DoInitAction(sprite: 0x10000, actions: InlineBytes(""))"#),
+        "Integer is out of bounds"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoInitAction(actions: InlineBytes(""))])"#)
-            .contains("Unexpected missing field named `sprite` in `DoInitAction`")
+    assert_err!(
+        tag_err!(r#"DoInitAction(actions: InlineBytes(""))"#),
+        "Unexpected missing field named `sprite` in `DoInitAction`"
     );
-    assert!(
-        compile_err!("Swf(version: 10, tags: [DoInitAction(sprite: 1)])")
-            .contains("Unexpected missing field named `actions` in `DoInitAction`")
+    assert_err!(
+        tag_err!("DoInitAction(sprite: 1)"),
+        "Unexpected missing field named `actions` in `DoInitAction`"
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [DoInitAction(id: 1, actions: InlineBytes(""))])"#)
-            .contains("Unexpected field named `id` in `DoInitAction`")
+    assert_err!(
+        tag_err!(r#"DoInitAction(id: 1, actions: InlineBytes(""))"#),
+        "Unexpected field named `id` in `DoInitAction`"
     );
 }
 
@@ -2316,56 +2343,52 @@ fn define_video_stream_codecs() {
 
 #[test]
 fn define_video_stream_errors() {
-    let err = |fields: &str| {
-        compile_err!(format!(
-            "Swf(version: 10, tags: [DefineVideoStream({fields})])"
-        ))
-    };
+    let err = |fields: &str| tag_err!(format!("DefineVideoStream({fields})"));
     let all_fields = "id: 1, num_frames: 1, width: 1, height: 1, codec: H263";
-    assert!(
-        err("num_frames: 1, width: 1, height: 1, codec: H263")
-            .contains("Unexpected missing field named `id` in `DefineVideoStream`")
+    assert_err!(
+        err("num_frames: 1, width: 1, height: 1, codec: H263"),
+        "Unexpected missing field named `id` in `DefineVideoStream`"
     );
-    assert!(
-        err("id: 1, width: 1, height: 1, codec: H263")
-            .contains("Unexpected missing field named `num_frames` in `DefineVideoStream`")
+    assert_err!(
+        err("id: 1, width: 1, height: 1, codec: H263"),
+        "Unexpected missing field named `num_frames` in `DefineVideoStream`"
     );
-    assert!(
-        err("id: 1, num_frames: 1, height: 1, codec: H263")
-            .contains("Unexpected missing field named `width` in `DefineVideoStream`")
+    assert_err!(
+        err("id: 1, num_frames: 1, height: 1, codec: H263"),
+        "Unexpected missing field named `width` in `DefineVideoStream`"
     );
-    assert!(
-        err("id: 1, num_frames: 1, width: 1, codec: H263")
-            .contains("Unexpected missing field named `height` in `DefineVideoStream`")
+    assert_err!(
+        err("id: 1, num_frames: 1, width: 1, codec: H263"),
+        "Unexpected missing field named `height` in `DefineVideoStream`"
     );
-    assert!(
-        err("id: 1, num_frames: 1, width: 1, height: 1")
-            .contains("Unexpected missing field named `codec` in `DefineVideoStream`")
+    assert_err!(
+        err("id: 1, num_frames: 1, width: 1, height: 1"),
+        "Unexpected missing field named `codec` in `DefineVideoStream`"
     );
-    assert!(
-        err(&format!("{all_fields}, smooth: true"))
-            .contains("Unexpected field named `smooth` in `DefineVideoStream`")
+    assert_err!(
+        err(&format!("{all_fields}, smooth: true")),
+        "Unexpected field named `smooth` in `DefineVideoStream`"
     );
     // The codec and the deblocking filter can only be one of the known values.
-    assert!(
-        err("id: 1, num_frames: 1, width: 1, height: 1, codec: H265")
-            .contains("Unexpected variant named `H265` in enum `VideoCodec`")
+    assert_err!(
+        err("id: 1, num_frames: 1, width: 1, height: 1, codec: H265"),
+        "Unexpected variant named `H265` in enum `VideoCodec`"
     );
-    assert!(
-        err(&format!("{all_fields}, deblocking: Level5"))
-            .contains("Unexpected variant named `Level5` in enum `VideoDeblocking`")
+    assert_err!(
+        err(&format!("{all_fields}, deblocking: Level5")),
+        "Unexpected variant named `Level5` in enum `VideoDeblocking`"
     );
-    assert!(
-        err("id: 0x10000, num_frames: 1, width: 1, height: 1, codec: H263")
-            .contains("Integer is out of bounds")
+    assert_err!(
+        err("id: 0x10000, num_frames: 1, width: 1, height: 1, codec: H263"),
+        "Integer is out of bounds"
     );
-    assert!(
-        err("id: 1, num_frames: 1, width: -1, height: 1, codec: H263")
-            .contains("Integer is out of bounds")
+    assert_err!(
+        err("id: 1, num_frames: 1, width: -1, height: 1, codec: H263"),
+        "Integer is out of bounds"
     );
-    assert!(
-        err("id: 1, num_frames: 1, width: 1, height: 65536, codec: H263")
-            .contains("Integer is out of bounds")
+    assert_err!(
+        err("id: 1, num_frames: 1, width: 1, height: 65536, codec: H263"),
+        "Integer is out of bounds"
     );
 }
 
@@ -2443,42 +2466,43 @@ fn video_frame_from_file() {
         ),
         [0x46, 0x0F, 0x01, 0x00, 0x00, 0x00, b'a', b'b']
     );
-    assert!(
-        compile_err!(
-            r#"Swf(version: 10, tags: [ShowFrame, VideoFrame(stream: 1, frame: 0, data: File("a.bin"))])"#
-        )
-        .contains(r#"tag #1: failed to read file "a.bin": files are not available"#)
+    assert_err!(
+        tag_err!(r#"VideoFrame(stream: 1, frame: 0, data: File("a.bin"))"#),
+        r#"tag #1: failed to read file "a.bin": files are not available"#
     );
 }
 
 #[test]
 fn video_frame_errors() {
-    let err =
-        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [VideoFrame({fields})])"));
-    assert!(
-        err(r#"frame: 0, data: InlineBytes("")"#)
-            .contains("Unexpected missing field named `stream` in `VideoFrame`")
+    let err = |fields: &str| tag_err!(format!("VideoFrame({fields})"));
+    assert_err!(
+        err(r#"frame: 0, data: InlineBytes("")"#),
+        "Unexpected missing field named `stream` in `VideoFrame`"
     );
-    assert!(
-        err(r#"stream: 1, data: InlineBytes("")"#)
-            .contains("Unexpected missing field named `frame` in `VideoFrame`")
+    assert_err!(
+        err(r#"stream: 1, data: InlineBytes("")"#),
+        "Unexpected missing field named `frame` in `VideoFrame`"
     );
-    assert!(
-        err("stream: 1, frame: 0")
-            .contains("Unexpected missing field named `data` in `VideoFrame`")
+    assert_err!(
+        err("stream: 1, frame: 0"),
+        "Unexpected missing field named `data` in `VideoFrame`"
     );
-    assert!(
-        err(r#"stream: 1, frame_num: 0, data: InlineBytes("")"#)
-            .contains("Unexpected field named `frame_num` in `VideoFrame`")
+    assert_err!(
+        err(r#"stream: 1, frame_num: 0, data: InlineBytes("")"#),
+        "Unexpected field named `frame_num` in `VideoFrame`"
     );
-    assert!(
-        err(r#"stream: 0x10000, frame: 0, data: InlineBytes("")"#)
-            .contains("Integer is out of bounds")
+    assert_err!(
+        err(r#"stream: 0x10000, frame: 0, data: InlineBytes("")"#),
+        "Integer is out of bounds"
     );
-    assert!(
-        err(r#"stream: 1, frame: -1, data: InlineBytes("")"#).contains("Integer is out of bounds")
+    assert_err!(
+        err(r#"stream: 1, frame: -1, data: InlineBytes("")"#),
+        "Integer is out of bounds"
     );
-    assert!(err(r#"stream: 1, frame: 0, data: InlineBytes("0")"#).contains("odd number of digits"));
+    assert_err!(
+        err(r#"stream: 1, frame: 0, data: InlineBytes("0")"#),
+        "odd number of digits"
+    );
 }
 
 #[test]
@@ -2502,13 +2526,18 @@ fn debug_id() {
 
 #[test]
 fn debug_id_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [{tag}])"));
-    assert!(err(r#"DebugId(InlineBytes("00"))"#).contains("expected 16 bytes, got 1"));
-    assert!(
-        err(r#"DebugId(InlineBytes("000102030405060708090a0b0c0d0e0f10"))"#)
-            .contains("expected 16 bytes, got 17")
+    assert_err!(
+        tag_err!(r#"DebugId(InlineBytes("00"))"#),
+        "expected 16 bytes, got 1"
     );
-    assert!(err(r#"DebugId(InlineBytes(""))"#).contains("expected 16 bytes, got 0"));
+    assert_err!(
+        tag_err!(r#"DebugId(InlineBytes("000102030405060708090a0b0c0d0e0f10"))"#),
+        "expected 16 bytes, got 17"
+    );
+    assert_err!(
+        tag_err!(r#"DebugId(InlineBytes(""))"#),
+        "expected 16 bytes, got 0"
+    );
 }
 
 #[test]
@@ -2530,16 +2559,23 @@ fn set_tab_index() {
 
 #[test]
 fn set_tab_index_errors() {
-    let err =
-        |fields: &str| compile_err!(format!("Swf(version: 10, tags: [SetTabIndex({fields})])"));
-    assert!(
-        err("tab_index: 1").contains("Unexpected missing field named `depth` in `SetTabIndex`")
+    let err = |fields: &str| tag_err!(format!("SetTabIndex({fields})"));
+    assert_err!(
+        err("tab_index: 1"),
+        "Unexpected missing field named `depth` in `SetTabIndex`"
     );
-    assert!(
-        err("depth: 1").contains("Unexpected missing field named `tab_index` in `SetTabIndex`")
+    assert_err!(
+        err("depth: 1"),
+        "Unexpected missing field named `tab_index` in `SetTabIndex`"
     );
-    assert!(err("depth: 1, index: 1").contains("Unexpected field named `index` in `SetTabIndex`"));
-    assert!(err("depth: 1, tab_index: 65536").contains("Integer is out of bounds"));
+    assert_err!(
+        err("depth: 1, index: 1"),
+        "Unexpected field named `index` in `SetTabIndex`"
+    );
+    assert_err!(
+        err("depth: 1, tab_index: 65536"),
+        "Integer is out of bounds"
+    );
 }
 
 #[test]
@@ -2568,26 +2604,25 @@ fn script_limits() {
 
 #[test]
 fn script_limits_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [{tag}])"));
-    assert!(
-        err("ScriptLimits(max_recursion_depth: 65536, timeout_seconds: 1)")
-            .contains("Integer is out of bounds")
+    assert_err!(
+        tag_err!("ScriptLimits(max_recursion_depth: 65536, timeout_seconds: 1)"),
+        "Integer is out of bounds"
     );
-    assert!(
-        err("ScriptLimits(max_recursion_depth: 1, timeout_seconds: -1)")
-            .contains("Integer is out of bounds")
+    assert_err!(
+        tag_err!("ScriptLimits(max_recursion_depth: 1, timeout_seconds: -1)"),
+        "Integer is out of bounds"
     );
-    assert!(
-        err("ScriptLimits(timeout_seconds: 1)")
-            .contains("Unexpected missing field named `max_recursion_depth` in `ScriptLimits`")
+    assert_err!(
+        tag_err!("ScriptLimits(timeout_seconds: 1)"),
+        "Unexpected missing field named `max_recursion_depth` in `ScriptLimits`"
     );
-    assert!(
-        err("ScriptLimits(max_recursion_depth: 1)")
-            .contains("Unexpected missing field named `timeout_seconds` in `ScriptLimits`")
+    assert_err!(
+        tag_err!("ScriptLimits(max_recursion_depth: 1)"),
+        "Unexpected missing field named `timeout_seconds` in `ScriptLimits`"
     );
-    assert!(
-        err("ScriptLimits(max_recursion_depth: 1, timeout: 1)")
-            .contains("Unexpected field named `timeout` in `ScriptLimits`")
+    assert_err!(
+        tag_err!("ScriptLimits(max_recursion_depth: 1, timeout: 1)"),
+        "Unexpected field named `timeout` in `ScriptLimits`"
     );
 }
 
@@ -2644,18 +2679,18 @@ fn do_abc_from_file() {
             b'a', b'b', // data
         ]
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, DoAbc(File("a.abc"))])"#)
-            .contains(r#"tag #1: failed to read file "a.abc": files are not available"#)
+    assert_err!(
+        tag_err!(r#"DoAbc(File("a.abc"))"#),
+        r#"tag #1: failed to read file "a.abc": files are not available"#
     );
 }
 
 #[test]
 fn do_abc_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
-    assert!(err(r#"DoAbc("10 00")"#).contains("Expected identifier"));
-    assert!(
-        err(r#"DoAbc(Hex("10 00"))"#).contains("Unexpected variant named `Hex` in enum `Data`")
+    assert_err!(tag_err!(r#"DoAbc("10 00")"#), "Expected identifier");
+    assert_err!(
+        tag_err!(r#"DoAbc(Hex("10 00"))"#),
+        "Unexpected variant named `Hex` in enum `Data`"
     );
 }
 
@@ -2704,19 +2739,18 @@ fn csm_text_settings_grid_fit() {
 
 #[test]
 fn csm_text_settings_errors() {
-    let err = |fields: &str| {
-        compile_err!(format!(
-            "Swf(version: 10, tags: [CsmTextSettings({fields})])"
-        ))
-    };
-    assert!(
-        err("advanced_rendering: true")
-            .contains("Unexpected missing field named `text` in `CsmTextSettings`")
+    let err = |fields: &str| tag_err!(format!("CsmTextSettings({fields})"));
+    assert_err!(
+        err("advanced_rendering: true"),
+        "Unexpected missing field named `text` in `CsmTextSettings`"
     );
-    assert!(err("id: 1").contains("Unexpected field named `id` in `CsmTextSettings`"));
-    assert!(
-        err("text: 1, grid_fit: Grid")
-            .contains("Unexpected variant named `Grid` in enum `GridFit`")
+    assert_err!(
+        err("id: 1"),
+        "Unexpected field named `id` in `CsmTextSettings`"
+    );
+    assert_err!(
+        err("text: 1, grid_fit: Grid"),
+        "Unexpected variant named `Grid` in enum `GridFit`"
     );
 }
 
@@ -2826,29 +2860,28 @@ fn symbol_class_long() {
 
 #[test]
 fn symbol_class_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
-    assert!(
-        err(r#"SymbolClass([(character: 1, name: "a"), (character: 2, name: "b\0c")])"#)
-            .contains(r#"tag #1: link #1: name: "b\0c" contains a null character"#)
+    assert_err!(
+        tag_err!(r#"SymbolClass([(character: 1, name: "a"), (character: 2, name: "b\0c")])"#),
+        r#"tag #1: link #1: name: "b\0c" contains a null character"#
     );
-    assert!(
-        err(&format!(
+    assert_err!(
+        tag_err!(&format!(
             "SymbolClass([{}])",
             r#"(character: 1, name: ""),"#.repeat(0x10000)
-        ))
-        .contains("tag #1: too many links: 65536, at most 65535")
+        )),
+        "tag #1: too many links: 65536, at most 65535"
     );
-    assert!(
-        err(r#"SymbolClass([(name: "a")])"#)
-            .contains("Unexpected missing field named `character` in `SymbolClassLink`")
+    assert_err!(
+        tag_err!(r#"SymbolClass([(name: "a")])"#),
+        "Unexpected missing field named `character` in `SymbolClassLink`"
     );
-    assert!(
-        err("SymbolClass([(character: 1)])")
-            .contains("Unexpected missing field named `name` in `SymbolClassLink`")
+    assert_err!(
+        tag_err!("SymbolClass([(character: 1)])"),
+        "Unexpected missing field named `name` in `SymbolClassLink`"
     );
-    assert!(
-        err(r#"SymbolClass([(character: 1, class_name: "a")])"#)
-            .contains("Unexpected field named `class_name` in `SymbolClassLink`")
+    assert_err!(
+        tag_err!(r#"SymbolClass([(character: 1, class_name: "a")])"#),
+        "Unexpected field named `class_name` in `SymbolClassLink`"
     );
 }
 
@@ -2911,22 +2944,21 @@ fn metadata_from_file() {
             0x00, // null terminator
         ]
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, Metadata(File("a.xml"))])"#)
-            .contains(r#"tag #1: failed to read file "a.xml": files are not available"#)
+    assert_err!(
+        tag_err!(r#"Metadata(File("a.xml"))"#),
+        r#"tag #1: failed to read file "a.xml": files are not available"#
     );
 }
 
 #[test]
 fn metadata_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
     // The metadata is null-terminated, so it can't contain null bytes.
-    assert!(
-        err(r#"Metadata(InlineBytes("61 00 62"))"#)
-            .contains("tag #1: null byte at offset 1, which would end the string early")
+    assert_err!(
+        tag_err!(r#"Metadata(InlineBytes("61 00 62"))"#),
+        "tag #1: null byte at offset 1, which would end the string early"
     );
-    assert!(err(r#"Metadata("<a/>")"#).contains("Expected identifier"));
-    assert!(err("Metadata()").contains("Expected identifier"));
+    assert_err!(tag_err!(r#"Metadata("<a/>")"#), "Expected identifier");
+    assert_err!(tag_err!("Metadata()"), "Expected identifier");
 }
 
 #[test]
@@ -2955,35 +2987,31 @@ fn define_scaling_grid() {
 
 #[test]
 fn define_scaling_grid_errors() {
-    let err = |fields: &str| {
-        compile_err!(format!(
-            "Swf(version: 10, tags: [DefineScalingGrid({fields})])"
-        ))
-    };
-    assert!(
-        err("splitter: (width: 1, height: 1)")
-            .contains("Unexpected missing field named `character` in `DefineScalingGrid`")
+    let err = |fields: &str| tag_err!(format!("DefineScalingGrid({fields})"));
+    assert_err!(
+        err("splitter: (width: 1, height: 1)"),
+        "Unexpected missing field named `character` in `DefineScalingGrid`"
     );
-    assert!(
-        err("character: 1")
-            .contains("Unexpected missing field named `splitter` in `DefineScalingGrid`")
+    assert_err!(
+        err("character: 1"),
+        "Unexpected missing field named `splitter` in `DefineScalingGrid`"
     );
-    assert!(
-        err("character: 1, splitter: (width: 1)")
-            .contains("Unexpected missing field named `height` in `Rect`")
+    assert_err!(
+        err("character: 1, splitter: (width: 1)"),
+        "Unexpected missing field named `height` in `Rect`"
     );
-    assert!(
-        err("character: 1, splitter: (width: 1, height: 1, z: 1)")
-            .contains("Unexpected field named `z` in `Rect`")
+    assert_err!(
+        err("character: 1, splitter: (width: 1, height: 1, z: 1)"),
+        "Unexpected field named `z` in `Rect`"
     );
     // The edges are whole numbers of twips, within 31 signed bits.
-    assert!(
-        err("character: 1, splitter: (x: 0.01, width: 1, height: 1)")
-            .contains("splitter: x: 0.01px is not a whole number of twips")
+    assert_err!(
+        err("character: 1, splitter: (x: 0.01, width: 1, height: 1)"),
+        "splitter: x: 0.01px is not a whole number of twips"
     );
-    assert!(
-        err("character: 1, splitter: (width: 53687091.2, height: 1)")
-            .contains("splitter: width: 53687091.2px is out of range")
+    assert_err!(
+        err("character: 1, splitter: (width: 53687091.2, height: 1)"),
+        "splitter: width: 53687091.2px is out of range"
     );
 }
 
@@ -3084,23 +3112,25 @@ fn do_abc_2_from_file() {
             b'a', b'b', // data
         ]
     );
-    assert!(
-        compile_err!(r#"Swf(version: 10, tags: [ShowFrame, DoAbc2(data: File("a.abc"))])"#)
-            .contains(r#"tag #1: failed to read file "a.abc": files are not available"#)
+    assert_err!(
+        tag_err!(r#"DoAbc2(data: File("a.abc"))"#),
+        r#"tag #1: failed to read file "a.abc": files are not available"#
     );
 }
 
 #[test]
 fn do_abc_2_errors() {
-    let err = |tag: &str| compile_err!(format!("Swf(version: 10, tags: [ShowFrame, {tag}])"));
-    assert!(
-        err(r#"DoAbc2(name: "a\0b", data: InlineBytes(""))"#)
-            .contains(r#"tag #1: name: "a\0b" contains a null character"#)
+    assert_err!(
+        tag_err!(r#"DoAbc2(name: "a\0b", data: InlineBytes(""))"#),
+        r#"tag #1: name: "a\0b" contains a null character"#
     );
-    assert!(err("DoAbc2()").contains("Unexpected missing field named `data` in `DoAbc2`"));
-    assert!(
-        err(r#"DoAbc2(flags: 1, data: InlineBytes(""))"#)
-            .contains("Unexpected field named `flags` in `DoAbc2`")
+    assert_err!(
+        tag_err!("DoAbc2()"),
+        "Unexpected missing field named `data` in `DoAbc2`"
+    );
+    assert_err!(
+        tag_err!(r#"DoAbc2(flags: 1, data: InlineBytes(""))"#),
+        "Unexpected field named `flags` in `DoAbc2`"
     );
 }
 
@@ -3132,20 +3162,26 @@ fn define_font_name() {
 
 #[test]
 fn define_font_name_errors() {
-    let err = |fields: &str| {
-        compile_err!(format!(
-            "Swf(version: 10, tags: [DefineFontName({fields})])"
-        ))
-    };
-    assert!(
-        err(r#"name: "a""#).contains("Unexpected missing field named `font` in `DefineFontName`")
+    let err = |fields: &str| tag_err!(format!("DefineFontName({fields})"));
+    assert_err!(
+        err(r#"name: "a""#),
+        "Unexpected missing field named `font` in `DefineFontName`"
     );
-    assert!(err("font: 1").contains("Unexpected missing field named `name` in `DefineFontName`"));
-    assert!(err(r#"id: 1, name: "a""#).contains("Unexpected field named `id` in `DefineFontName`"));
-    assert!(err(r#"font: 1, name: "a\0b""#).contains(r#"name: "a\0b" contains a null character"#));
-    assert!(
-        err(r#"font: 1, name: "a", copyright: "b\0c""#)
-            .contains(r#"copyright: "b\0c" contains a null character"#)
+    assert_err!(
+        err("font: 1"),
+        "Unexpected missing field named `name` in `DefineFontName`"
+    );
+    assert_err!(
+        err(r#"id: 1, name: "a""#),
+        "Unexpected field named `id` in `DefineFontName`"
+    );
+    assert_err!(
+        err(r#"font: 1, name: "a\0b""#),
+        r#"name: "a\0b" contains a null character"#
+    );
+    assert_err!(
+        err(r#"font: 1, name: "a", copyright: "b\0c""#),
+        r#"copyright: "b\0c" contains a null character"#
     );
 }
 
@@ -3222,18 +3258,29 @@ fn rascal_syntax() {
     );
 
     let parse_err = |data| parse(data).unwrap_err();
-    assert!(parse_err("Rascal(source: \"a\", file: \"b\")").contains("found both"));
-    assert!(parse_err("Rascal(source: None)").contains("expected `source` or `file`"));
-    assert!(parse_err("Rascal(swf_version: 6)").contains("expected `source` or `file`"));
-    assert!(
-        parse_err("Rascal(source: \"\", swf_version: 256)").contains("Integer is out of bounds")
+    assert_err!(
+        parse_err("Rascal(source: \"a\", file: \"b\")"),
+        "found both"
     );
-    assert!(parse_err("Rascal(1)").contains("Expected a script or a struct"));
-    assert!(parse_err("Rascal()").contains("Expected a script or a struct"));
-    assert!(parse_err("Rascal(script: \"a\")").contains(
+    assert_err!(
+        parse_err("Rascal(source: None)"),
+        "expected `source` or `file`"
+    );
+    assert_err!(
+        parse_err("Rascal(swf_version: 6)"),
+        "expected `source` or `file`"
+    );
+    assert_err!(
+        parse_err("Rascal(source: \"\", swf_version: 256)"),
+        "Integer is out of bounds"
+    );
+    assert_err!(parse_err("Rascal(1)"), "Expected a script or a struct");
+    assert_err!(parse_err("Rascal()"), "Expected a script or a struct");
+    assert_err!(
+        parse_err("Rascal(script: \"a\")"),
         "Unexpected field named `script` in `Rascal`, expected one of `source`, `file`, \
         `swf_version`, `fold_constants`, or `promote_variables_to_registers`"
-    ));
+    );
 }
 
 #[cfg(feature = "rascal")]
@@ -3409,16 +3456,16 @@ mod rascal {
             compile_tags!(r##"DoAction(Rascal(r#"trace("hello");"#))"##)
         );
         // Errors of the provider are kept.
-        assert!(
+        assert_err!(
             compile_err!(
                 r##"Swf(version: 10, tags: [DoAction(Rascal(r#"#include "c.as""#))])"##,
                 &files
-            )
-            .contains("Could not load file 'c.as': no file named c.as")
+            ),
+            "Could not load file 'c.as': no file named c.as"
         );
-        assert!(
-            compile_err!(r##"Swf(version: 10, tags: [DoAction(Rascal(r#"#include "c.as""#))])"##)
-                .contains("Could not load file 'c.as': files are not available")
+        assert_err!(
+            tag_err!(r##"DoAction(Rascal(r#"#include "c.as""#))"##),
+            "Could not load file 'c.as': files are not available"
         );
     }
 
@@ -3441,51 +3488,51 @@ mod rascal {
             inline
         );
         // Errors point to the file.
-        assert!(
+        assert_err!(
             compile_err!(
                 r#"Swf(version: 10, tags: [DoAction(Rascal(file: "d.as"))])"#,
                 &files
-            )
-            .contains("failed to compile the ActionScript: error: Compile error\n  ╭▸ d.as:1:1")
+            ),
+            "failed to compile the ActionScript: error: Compile error\n  ╭▸ d.as:1:1"
         );
-        assert!(
+        assert_err!(
             compile_err!(
                 r#"Swf(version: 10, tags: [DoAction(Rascal(file: "e.as"))])"#,
                 &files
-            )
-            .contains("failed to compile the ActionScript: error: no file named e.as\n ─▸ e.as")
+            ),
+            "failed to compile the ActionScript: error: no file named e.as\n ─▸ e.as"
         );
     }
 
     #[test]
     fn errors() {
-        assert!(
-            compile_err!(r#"Swf(version: 10, tags: [ShowFrame, DoAction(Rascal("trace("))])"#)
-                .contains("tag #1: failed to compile the ActionScript: error: Compile error")
+        assert_err!(
+            tag_err!(r#"DoAction(Rascal("trace("))"#),
+            "tag #1: failed to compile the ActionScript: error: Compile error"
         );
-        assert!(
-            compile_err!(r#"Swf(version: 10, tags: [DoAction(Rascal("trace(\n1 2)"))])"#)
-                .contains("╭▸ <inline>:2:3")
+        assert_err!(
+            tag_err!(r#"DoAction(Rascal("trace(\n1 2)"))"#),
+            "╭▸ <inline>:2:3"
         );
         // Classes are loaded from files, and compiled into separate tags.
         let files = TextFiles(&[("Foo.as", "class Foo {}"), ("a/Bar.as", "class a.Bar {}")]);
-        assert!(
+        assert_err!(
             compile_err!(
                 r#"Swf(version: 10, tags: [DoAction(Rascal("var foo = new Foo();"))])"#,
                 &files
-            )
-            .contains("classes and interfaces are not supported")
+            ),
+            "classes and interfaces are not supported"
         );
-        assert!(
+        assert_err!(
             compile_err!(
                 r#"Swf(version: 10, tags: [DoAction(Rascal("import a.Bar; var bar: Bar;"))])"#,
                 &files
-            )
-            .contains("classes and interfaces are not supported")
+            ),
+            "classes and interfaces are not supported"
         );
-        assert!(
-            compile_err!(r#"Swf(version: 10, tags: [DoAction(Rascal("class Foo {}"))])"#)
-                .contains("Classes may only be defined in external ActionScript 2.0 class scripts")
+        assert_err!(
+            tag_err!(r#"DoAction(Rascal("class Foo {}"))"#),
+            "Classes may only be defined in external ActionScript 2.0 class scripts"
         );
     }
 }
@@ -3497,6 +3544,6 @@ fn rascal_not_available() {
         let source = format!("Swf(version: 10, tags: [DoAction({data})])");
         // Sources that use Rascal are parsed, but fail to compile.
         swfasm::parse(&source).unwrap();
-        assert!(compile_err!(source).contains("Rascal is not available"));
+        assert_err!(compile_err!(source), "Rascal is not available");
     }
 }
