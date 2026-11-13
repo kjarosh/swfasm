@@ -3,12 +3,28 @@ use swf::{
     PlaceObjectAction, Rectangle, SwfStr, Twips,
 };
 use swfasm::Compiler;
+#[cfg(feature = "asc")]
+use swfasm::asc::{AscConfig, AscFile};
 use swfasm::files::{FileProvider, NoFiles};
 use swfasm::source::{Asc, ClipEvent, Data, Rascal, ScriptSource, Tag};
 
-/// Compiles the given source with files from the given provider.
+/// Compiles the given source with files from the given provider, and with asc
+/// from `vendor/asc`.
 fn compile_str(text: &str, files: &dyn FileProvider) -> anyhow::Result<Vec<u8>> {
-    Compiler::new().with_files(files).compile_str(text)
+    let compiler = Compiler::new().with_files(files);
+    #[cfg(feature = "asc")]
+    let compiler = compiler.with_asc(vendored_asc());
+    compiler.compile_str(text)
+}
+
+/// The files in `vendor/asc`, by their paths.
+#[cfg(feature = "asc")]
+fn vendored_asc() -> AscConfig {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("vendor/asc");
+    AscConfig {
+        jar: AscFile::Path(dir.join("asc.jar")),
+        playerglobal: AscFile::Path(dir.join("playerglobal.abc")),
+    }
 }
 
 // These are macros instead of functions, so that failures point to the test.
@@ -378,17 +394,34 @@ const STRUCTS: &[&str] = &[
     r#"DefineFontName(font: 1, name: "a"{})"#,
 ];
 
+/// Like [`STRUCTS`], for structs that need a feature to compile, with whether
+/// it is enabled.
+const FEATURE_DEPENDENT_STRUCTS: &[(bool, &str)] = &[
+    (
+        cfg!(feature = "rascal"),
+        r#"DoAction(Rascal(source: ""{}))"#,
+    ),
+    (cfg!(feature = "asc"), r#"DoAbc(Asc(source: ""{}))"#),
+];
+
 #[test]
 fn minimal_structs() {
     // Only the fields in the table are required.
     for tag in STRUCTS {
         compile_tags!(tag.replace("{}", ""));
     }
+    for (enabled, tag) in FEATURE_DEPENDENT_STRUCTS {
+        if *enabled {
+            compile_tags!(tag.replace("{}", ""));
+        }
+    }
 }
 
 #[test]
 fn unknown_fields() {
-    for tag in STRUCTS {
+    // Structs are parsed even if the feature they need is not enabled.
+    let feature_dependent_structs = FEATURE_DEPENDENT_STRUCTS.iter().map(|(_, tag)| tag);
+    for tag in STRUCTS.iter().chain(feature_dependent_structs) {
         assert_err!(
             tag_err!(tag.replace("{}", ", zzz: 1")),
             "Unexpected field named `zzz`"
@@ -2377,23 +2410,25 @@ fn rascal_syntax() {
     );
 }
 
+/// Provides the given files, with their contents as text.
+#[cfg(any(feature = "rascal", feature = "asc"))]
+struct TextFiles(&'static [(&'static str, &'static str)]);
+
+#[cfg(any(feature = "rascal", feature = "asc"))]
+impl FileProvider for TextFiles {
+    fn read(&self, path: &str) -> anyhow::Result<Vec<u8>> {
+        let (_, contents) = self
+            .0
+            .iter()
+            .find(|(name, _)| *name == path)
+            .ok_or_else(|| anyhow::anyhow!("no file named {path}"))?;
+        Ok(contents.as_bytes().to_vec())
+    }
+}
+
 #[cfg(feature = "rascal")]
 mod rascal {
     use super::*;
-
-    /// Provides the given files, with their contents as text.
-    struct TextFiles(&'static [(&'static str, &'static str)]);
-
-    impl FileProvider for TextFiles {
-        fn read(&self, path: &str) -> anyhow::Result<Vec<u8>> {
-            let (_, contents) = self
-                .0
-                .iter()
-                .find(|(name, _)| *name == path)
-                .ok_or_else(|| anyhow::anyhow!("no file named {path}"))?;
-            Ok(contents.as_bytes().to_vec())
-        }
-    }
 
     #[test]
     fn script() {
@@ -2705,6 +2740,155 @@ fn asc_syntax() {
         "Unexpected field named `script` in `Asc`, expected one of `source`, `file`, \
         `scripts`, `optimize`, or `debug`"
     );
+}
+
+#[cfg(feature = "asc")]
+mod asc {
+    use super::*;
+
+    #[test]
+    fn script() {
+        assert_eq!(
+            compile_tags!(r#"DoAbc(Asc(""))"#),
+            [
+                [0x22, 0x12].as_slice(),               // code 72, length 34
+                &[0x10, 0x00, 0x2E, 0x00],             // minor version 16, major version 46
+                &[0x00, 0x00, 0x00],                   // no ints, uints and doubles
+                &[0x02, 0x00],                         // the string ""
+                &[0x00, 0x00, 0x00],                   // no namespaces, sets and multinames
+                &[0x01, 0x00, 0x00, 0x01, 0x00],       // a method named ""
+                &[0x00, 0x00],                         // no metadata and classes
+                &[0x01, 0x00, 0x00],                   // a script with the method as initializer
+                &[0x01, 0x00, 0x01, 0x01, 0x01, 0x02], // the body of the method
+                &[0x03, 0xD0, 0x30, 0x47],             // GetLocal0, PushScope, ReturnVoid
+                &[0x00, 0x00],                         // no exceptions and traits
+            ]
+            .concat()
+        );
+        let hello = compile_tags!(r##"DoAbc(Asc(r#"trace("hello");"#))"##);
+        assert_eq!(
+            compile_tags!(r##"DoAbc(Asc(source: r#"trace("hello");"#))"##),
+            hello
+        );
+        // The ABC file can be used as any other data.
+        assert_eq!(
+            compile_tags!(r#"DefineBinaryData(id: 1, data: Asc(""))"#)[8..],
+            compile_tags!(r#"DoAbc(Asc(""))"#)[2..]
+        );
+    }
+
+    #[test]
+    fn file() {
+        // asc writes the name of the file into the ABC file, so the files have
+        // the name of the inline script.
+        let files = TextFiles(&[
+            ("inline", r#"trace("hello");"#),
+            ("a/inline", r#"trace("hello");"#),
+            ("./a/inline", r#"trace("hello");"#),
+            ("b.as", r#"trace("hello");"#),
+        ]);
+        let inline = compile_tags!(r##"DoAbc(Asc(r#"trace("hello");"#))"##);
+        assert_eq!(
+            compile_tags!(r#"DoAbc(Asc(file: "inline"))"#, &files),
+            inline
+        );
+        assert_eq!(
+            compile_tags!(r#"DoAbc(Asc(file: "a/inline"))"#, &files),
+            inline
+        );
+        assert_eq!(
+            compile_tags!(r#"DoAbc(Asc(file: "./a/inline"))"#, &files),
+            inline
+        );
+        assert_ne!(compile_tags!(r#"DoAbc(Asc(file: "b.as"))"#, &files), inline);
+        assert_err!(
+            compile_err!(
+                r#"Swf(version: 10, tags: [DoAbc(Asc(file: "d.as"))])"#,
+                &files
+            ),
+            "failed to compile the ActionScript: failed to read file \"d.as\": no file named d.as"
+        );
+    }
+
+    #[test]
+    fn scripts() {
+        let files = TextFiles(&[
+            (
+                "Main.as",
+                "package { import pkg.Other; public class Main { new Other(); } }",
+            ),
+            ("pkg/Other.as", "package pkg { public class Other {} }"),
+        ]);
+        let main = compile_tags!(r#"DoAbc(Asc(file: "Main.as"))"#, &files);
+        let with_other = compile_tags!(
+            r#"DoAbc(Asc(file: "Main.as", scripts: ["pkg/Other.as"]))"#,
+            &files
+        );
+        assert_ne!(main, with_other);
+        // The main script is compiled once, even if it is listed too, with any
+        // spelling of its path.
+        for main in ["Main.as", "./Main.as"] {
+            assert_eq!(
+                compile_tags!(
+                    format!(r#"DoAbc(Asc(file: "Main.as", scripts: ["{main}", "pkg/Other.as"]))"#),
+                    &files
+                ),
+                with_other
+            );
+        }
+        assert_err!(
+            compile_err!(
+                r#"Swf(version: 10, tags: [DoAbc(Asc(file: "Main.as", scripts: ["e.as"]))])"#,
+                &files
+            ),
+            "failed to read file \"e.as\": no file named e.as"
+        );
+    }
+
+    #[test]
+    fn options() {
+        let script = r#"source: "var a = 1; var b = a; trace(b);""#;
+        let compile = |options: &str| compile_tags!(format!("DoAbc(Asc({script}{options}))"));
+        let default = compile("");
+        assert_eq!(compile(", optimize: true, debug: false"), default);
+        // The optimizer of asc doesn't change small scripts like this one, so
+        // this only checks that asc accepts the option.
+        assert_eq!(compile(", optimize: false"), default);
+        assert_ne!(compile(", debug: true"), default);
+    }
+
+    #[test]
+    fn errors() {
+        assert_err!(
+            tag_err!(r#"DoAbc(Asc("trace("))"#),
+            "tag #1: failed to compile the ActionScript: asc failed: [Compiler] Error #1084"
+        );
+        assert_err!(tag_err!(r#"DoAbc(Asc("trace("))"#), "inline, Ln 2, Col 1");
+        // Files are copied into a temporary directory, so their paths must stay
+        // inside it.
+        for path in ["../a.as", "/a.as", "a/../../b.as"] {
+            assert_err!(
+                compile_err!(
+                    format!(r#"Swf(version: 10, tags: [DoAbc(Asc(file: "{path}"))])"#),
+                    &PathAsContents
+                ),
+                format!("the path \"{path}\" must be relative and must not contain `..`")
+            );
+        }
+        assert_err!(
+            compile_err!(
+                r#"Swf(version: 10, tags: [DoAbc(Asc(file: "."))])"#,
+                &PathAsContents
+            ),
+            "the path \".\" does not name a file"
+        );
+        for path in ["inline", "./inline"] {
+            assert_err!(
+                tag_err!(format!(r#"DoAbc(Asc(source: "", scripts: ["{path}"]))"#)),
+                format!("\"{path}\" is the path of the inline script")
+            );
+        }
+    }
 }
 
 #[cfg(not(feature = "asc"))]
