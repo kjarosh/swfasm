@@ -991,7 +991,7 @@ pub enum Data {
 
     /// An ABC file compiled by asc from ActionScript 3 scripts.
     ///
-    /// Compiling it is not supported yet, so sources that use it fail to
+    /// Requires the `asc` feature: without it, sources that use it fail to
     /// compile.
     Asc(Asc),
 }
@@ -1198,6 +1198,8 @@ impl<'de> Deserialize<'de> for Rascal {
 /// // Compiled without optimizations, with debug info.
 /// data: Asc(file: "Main.as", optimize: false, debug: true),
 /// ```
+///
+/// Paths must be relative and must not contain `..`.
 #[derive(Debug, PartialEq)]
 pub struct Asc {
     /// The main script, which gives the ABC file its name in asc.

@@ -47,6 +47,8 @@ use swf::{
 #[derive(Clone)]
 pub struct Compiler<'a> {
     files: &'a dyn FileProvider,
+    #[cfg(feature = "asc")]
+    asc: Option<crate::asc::AscConfig>,
 }
 
 impl Default for Compiler<'_> {
@@ -58,7 +60,11 @@ impl Default for Compiler<'_> {
 impl<'a> Compiler<'a> {
     /// A compiler with the default settings.
     pub fn new() -> Self {
-        Self { files: &NoFiles }
+        Self {
+            files: &NoFiles,
+            #[cfg(feature = "asc")]
+            asc: None,
+        }
     }
 
     /// Reads the files that sources refer to from `files`.
@@ -66,6 +72,17 @@ impl<'a> Compiler<'a> {
     /// Without it, sources that refer to files fail to compile.
     pub fn with_files(mut self, files: &'a dyn FileProvider) -> Self {
         self.files = files;
+        self
+    }
+
+    /// Compiles ActionScript 3 with asc, from the given files.
+    ///
+    /// Without it, sources that use asc fail to compile.
+    ///
+    /// Requires the `asc` feature.
+    #[cfg(feature = "asc")]
+    pub fn with_asc(mut self, config: crate::asc::AscConfig) -> Self {
+        self.asc = Some(config);
         self
     }
 
@@ -579,7 +596,20 @@ fn read_data<'a>(data: &'a Data, swf_version: u8, compiler: &Compiler) -> Result
                 bail!("Rascal is not available")
             }}
         },
-        Data::Asc(_) => bail!("asc is not available"),
+        Data::Asc(script) => cfg_select! {
+            feature = "asc" => {{
+                let Some(config) = &compiler.asc else {
+                    bail!("asc is not configured")
+                };
+                crate::asc::compile(script, config, compiler.files)
+                    .map(Cow::Owned)
+                    .context("failed to compile the ActionScript")
+            }}
+            _ => {{
+                let _ = script;
+                bail!("asc is not available")
+            }}
+        },
     }
 }
 
