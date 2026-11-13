@@ -40,6 +40,8 @@ rascal = ["dep:rascal"]
 # Compiling ActionScript 3 with asc, which requires Java. Without it, sources
 # that use asc fail to compile.
 asc = ["fs", "dep:tempfile"]
+# Includes the vendored asc and playerglobal.
+asc-vendored = ["asc"]
 
 [dev-dependencies]
 libtest-mimic = "0.8.2"
