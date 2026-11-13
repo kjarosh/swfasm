@@ -2,7 +2,8 @@
 //!
 //! asc and the playerglobal that scripts are compiled against are not part of
 //! swfasm, they are given to [`Compiler::with_asc`](crate::Compiler::with_asc)
-//! in an [`AscConfig`].
+//! in an [`AscConfig`]. The `asc-vendored` feature includes a copy of both, see
+//! [`AscConfig::vendored`].
 //!
 //! Requires the `asc` feature.
 
@@ -42,6 +43,25 @@ pub struct AscConfig {
     /// An ABC file with the definitions that scripts are compiled against,
     /// given to asc with `-import`.
     pub playerglobal: AscFile,
+}
+
+impl AscConfig {
+    /// The copies of asc and Ruffle's playerglobal included in swfasm.
+    ///
+    /// Requires the `asc-vendored` feature.
+    #[cfg(feature = "asc-vendored")]
+    pub fn vendored() -> Self {
+        Self {
+            jar: AscFile::Bytes(Cow::Borrowed(include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/vendor/asc/asc.jar"
+            )))),
+            playerglobal: AscFile::Bytes(Cow::Borrowed(include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/vendor/asc/playerglobal.abc"
+            )))),
+        }
+    }
 }
 
 /// A file that asc needs, see [`AscConfig`].
