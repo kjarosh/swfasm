@@ -1087,7 +1087,7 @@ impl<'de> Deserialize<'de> for Bytes {
 #[derive(Debug, PartialEq)]
 pub struct Rascal {
     /// The script.
-    pub source: RascalSource,
+    pub source: ScriptSource,
 
     /// The SWF version to compile the script for, instead of the version of
     /// the SWF file.
@@ -1108,12 +1108,25 @@ pub struct Rascal {
 
 /// Where the script of [`Rascal`] comes from.
 #[derive(Debug, PartialEq)]
-pub enum RascalSource {
+pub enum ScriptSource {
     /// The text of the script, from `source`.
     Inline(String),
 
     /// The path of a file with the script, from `file`.
     File(String),
+}
+
+impl ScriptSource {
+    /// Returns the source from the `source` and `file` fields, of which
+    /// exactly one must be given.
+    fn from_fields<E: de::Error>(source: Option<String>, file: Option<String>) -> Result<Self, E> {
+        match (source, file) {
+            (Some(source), None) => Ok(Self::Inline(source)),
+            (None, Some(path)) => Ok(Self::File(path)),
+            (None, None) => Err(E::custom("expected `source` or `file`")),
+            (Some(_), Some(_)) => Err(E::custom("expected `source` or `file`, but found both")),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Rascal {
@@ -1129,7 +1142,7 @@ impl<'de> Deserialize<'de> for Rascal {
 
             fn visit_str<E: de::Error>(self, source: &str) -> Result<Rascal, E> {
                 Ok(Rascal {
-                    source: RascalSource::Inline(source.to_owned()),
+                    source: ScriptSource::Inline(source.to_owned()),
                     swf_version: None,
                     fold_constants: true,
                     promote_variables_to_registers: true,
@@ -1148,18 +1161,8 @@ impl<'de> Deserialize<'de> for Rascal {
                 }
 
                 let fields = Fields::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                let source = match (fields.source, fields.file) {
-                    (Some(source), None) => RascalSource::Inline(source),
-                    (None, Some(path)) => RascalSource::File(path),
-                    (None, None) => return Err(de::Error::custom("expected `source` or `file`")),
-                    (Some(_), Some(_)) => {
-                        return Err(de::Error::custom(
-                            "expected `source` or `file`, but found both",
-                        ));
-                    }
-                };
                 Ok(Rascal {
-                    source,
+                    source: ScriptSource::from_fields(fields.source, fields.file)?,
                     swf_version: fields.swf_version,
                     fold_constants: fields.fold_constants.unwrap_or(true),
                     promote_variables_to_registers: fields
