@@ -988,6 +988,12 @@ pub enum Data {
     /// Requires the `rascal` feature: without it, sources that use it fail to
     /// compile.
     Rascal(Rascal),
+
+    /// An ABC file compiled by asc from ActionScript 3 scripts.
+    ///
+    /// Compiling it is not supported yet, so sources that use it fail to
+    /// compile.
+    Asc(Asc),
 }
 
 /// Binary data, written as a hex string with optional whitespace (`"01 02 ff"`),
@@ -1106,7 +1112,7 @@ pub struct Rascal {
     pub promote_variables_to_registers: bool,
 }
 
-/// Where the script of [`Rascal`] comes from.
+/// Where the script of [`Rascal`] or [`Asc`] comes from.
 #[derive(Debug, PartialEq)]
 pub enum ScriptSource {
     /// The text of the script, from `source`.
@@ -1173,6 +1179,90 @@ impl<'de> Deserialize<'de> for Rascal {
         }
 
         deserializer.deserialize_any(RascalVisitor)
+    }
+}
+
+/// ActionScript 3 scripts, compiled by asc into a single ABC file.
+///
+/// ```ron
+/// // The script itself.
+/// data: Asc(r#"trace("hello");"#),
+///
+/// // The same, written as a struct.
+/// data: Asc(source: r#"trace("hello");"#),
+///
+/// // A file with the script, relative to the swfasm source, with another file
+/// // compiled along with it.
+/// data: Asc(file: "Main.as", scripts: ["pkg/Other.as"]),
+///
+/// // Compiled without optimizations, with debug info.
+/// data: Asc(file: "Main.as", optimize: false, debug: true),
+/// ```
+#[derive(Debug, PartialEq)]
+pub struct Asc {
+    /// The main script, which gives the ABC file its name in asc.
+    pub source: ScriptSource,
+
+    /// Paths of other files compiled along with the main script, with `-in`.
+    ///
+    /// asc compiles only the files it is given, so files with the classes
+    /// that the main script uses have to be listed here.
+    pub scripts: Vec<String>,
+
+    /// Whether asc optimizes the bytecode, with `-optimize`.
+    ///
+    /// Defaults to true.
+    pub optimize: bool,
+
+    /// Whether asc emits debug info into the bytecode, with `-d`.
+    ///
+    /// Defaults to false.
+    pub debug: bool,
+}
+
+impl<'de> Deserialize<'de> for Asc {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct AscVisitor;
+
+        impl<'de> Visitor<'de> for AscVisitor {
+            type Value = Asc;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a script or a struct")
+            }
+
+            fn visit_str<E: de::Error>(self, source: &str) -> Result<Asc, E> {
+                Ok(Asc {
+                    source: ScriptSource::Inline(source.to_owned()),
+                    scripts: Vec::new(),
+                    optimize: true,
+                    debug: false,
+                })
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, map: A) -> Result<Asc, A::Error> {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Fields {
+                    source: Option<String>,
+                    file: Option<String>,
+                    #[serde(default)]
+                    scripts: Vec<String>,
+                    optimize: Option<bool>,
+                    debug: Option<bool>,
+                }
+
+                let fields = Fields::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                Ok(Asc {
+                    source: ScriptSource::from_fields(fields.source, fields.file)?,
+                    scripts: fields.scripts,
+                    optimize: fields.optimize.unwrap_or(true),
+                    debug: fields.debug.unwrap_or(false),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(AscVisitor)
     }
 }
 

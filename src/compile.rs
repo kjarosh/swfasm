@@ -579,6 +579,7 @@ fn read_data<'a>(data: &'a Data, swf_version: u8, compiler: &Compiler) -> Result
                 bail!("Rascal is not available")
             }}
         },
+        Data::Asc(_) => bail!("asc is not available"),
     }
 }
 
