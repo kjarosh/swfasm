@@ -4,7 +4,7 @@ use swf::{
 };
 use swfasm::Compiler;
 use swfasm::files::{FileProvider, NoFiles};
-use swfasm::source::{ClipEvent, Data, Rascal, ScriptSource, Tag};
+use swfasm::source::{Asc, ClipEvent, Data, Rascal, ScriptSource, Tag};
 
 /// Compiles the given source with files from the given provider.
 fn compile_str(text: &str, files: &dyn FileProvider) -> anyhow::Result<Vec<u8>> {
@@ -2639,5 +2639,80 @@ fn rascal_not_available() {
         // Sources that use Rascal are parsed, but fail to compile.
         Compiler::new().parse(&source).unwrap();
         assert_err!(compile_err!(source), "Rascal is not available");
+    }
+}
+
+#[test]
+fn asc_syntax() {
+    let parse = |data: &str| -> Result<Data, String> {
+        let swf = Compiler::new()
+            .parse(&format!("Swf(version: 10, tags: [DoAbc({data})])"))
+            .map_err(|e| format!("{e:#}"))?;
+        match swf.tags.into_iter().next() {
+            Some(Tag::DoAbc(data)) => Ok(data),
+            tag => panic!("unexpected tag {tag:?}"),
+        }
+    };
+    let asc = |script| Ok(Data::Asc(script));
+    let inline = |text: &str| Asc {
+        source: ScriptSource::Inline(text.to_owned()),
+        scripts: vec![],
+        optimize: true,
+        debug: false,
+    };
+    let file = |path: &str| Asc {
+        source: ScriptSource::File(path.to_owned()),
+        scripts: vec![],
+        optimize: true,
+        debug: false,
+    };
+
+    assert_eq!(parse(r#"Asc("trace(1);")"#), asc(inline("trace(1);")));
+    assert_eq!(
+        parse(r#"Asc(source: "trace(1);")"#),
+        asc(inline("trace(1);"))
+    );
+    assert_eq!(parse(r#"Asc(file: "a.as")"#), asc(file("a.as")));
+    assert_eq!(
+        parse(r#"Asc(file: "a.as", scripts: ["b.as", "c/d.as"])"#),
+        asc(Asc {
+            scripts: vec!["b.as".to_owned(), "c/d.as".to_owned()],
+            ..file("a.as")
+        })
+    );
+    assert_eq!(
+        parse(r#"Asc(source: "", optimize: false, debug: true)"#),
+        asc(Asc {
+            optimize: false,
+            debug: true,
+            ..inline("")
+        })
+    );
+    assert_eq!(
+        parse(r#"Asc(source: "", optimize: true, debug: false)"#),
+        asc(inline(""))
+    );
+
+    let parse_err = |data| parse(data).unwrap_err();
+    assert_err!(parse_err("Asc(source: \"a\", file: \"b\")"), "found both");
+    assert_err!(
+        parse_err("Asc(scripts: [\"a.as\"])"),
+        "expected `source` or `file`"
+    );
+    assert_err!(parse_err("Asc(1)"), "Expected a script or a struct");
+    assert_err!(
+        parse_err("Asc(script: \"a\")"),
+        "Unexpected field named `script` in `Asc`, expected one of `source`, `file`, \
+        `scripts`, `optimize`, or `debug`"
+    );
+}
+
+#[test]
+fn asc_not_available() {
+    for data in [r#"Asc("")"#, r#"Asc(file: "a.as")"#] {
+        let source = format!("Swf(version: 10, tags: [DoAbc({data})])");
+        // Sources that use asc are parsed, but fail to compile.
+        Compiler::new().parse(&source).unwrap();
+        assert_err!(compile_err!(source), "asc is not available");
     }
 }
