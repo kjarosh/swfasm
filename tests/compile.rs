@@ -2,8 +2,14 @@ use swf::{
     ClipEventFlag, ColorTransform, Compression, Fixed8, Fixed16, Matrix, PlaceObject,
     PlaceObjectAction, Rectangle, SwfStr, Twips,
 };
+use swfasm::Compiler;
 use swfasm::files::{FileProvider, NoFiles};
 use swfasm::source::{ClipEvent, Data, Rascal, ScriptSource, Tag};
+
+/// Compiles the given source with files from the given provider.
+fn compile_str(text: &str, files: &dyn FileProvider) -> anyhow::Result<Vec<u8>> {
+    Compiler::new().with_files(files).compile_str(text)
+}
 
 // These are macros instead of functions, so that failures point to the test.
 
@@ -23,7 +29,7 @@ macro_rules! compile_tags {
     };
     ($tags:expr, $files:expr, version: $version:expr) => {{
         let compile = |tags: &str| {
-            swfasm::compile_str(
+            compile_str(
                 &format!(
                     "Swf(version: {}, num_frames: 0, tags: [{tags}])",
                     $version
@@ -40,7 +46,7 @@ macro_rules! compile_tags {
 /// the swf crate.
 macro_rules! read_place_object {
     ($tag:expr) => {{
-        let swf = swfasm::compile_str(
+        let swf = compile_str(
             &format!("Swf(version: 10, tags: [{}, End])", $tag),
             &NoFiles,
         )
@@ -87,7 +93,7 @@ macro_rules! compile_err {
         compile_err!($source, &NoFiles)
     };
     ($source:expr, $files:expr) => {
-        format!("{:#}", swfasm::compile_str(&$source, $files).unwrap_err())
+        format!("{:#}", compile_str(&$source, $files).unwrap_err())
     };
 }
 
@@ -141,7 +147,7 @@ impl FileProvider for Failing {
 
 #[test]
 fn header() {
-    let swf = swfasm::compile_str(
+    let swf = compile_str(
         "Swf(
             version: 8,
             stage: (x: 10, y: 1.5, width: 100, height: 0.05),
@@ -170,7 +176,7 @@ fn header() {
 
 #[test]
 fn stage_edges_are_added_in_twips() {
-    let swf = swfasm::compile_str(
+    let swf = compile_str(
         "Swf(version: 10, stage: (x: 0.05, y: 0.05, width: 0.1, height: 0.1))",
         &NoFiles,
     )
@@ -190,8 +196,7 @@ fn stage_edges_are_added_in_twips() {
 #[test]
 fn default_num_frames() {
     let num_frames = |tags: &str| {
-        let swf =
-            swfasm::compile_str(&format!("Swf(version: 10, tags: [{tags}])"), &NoFiles).unwrap();
+        let swf = compile_str(&format!("Swf(version: 10, tags: [{tags}])"), &NoFiles).unwrap();
         swf::decompress_swf(&swf[..]).unwrap().header.num_frames()
     };
     assert_eq!(num_frames(""), 0);
@@ -220,7 +225,7 @@ fn default_num_frames() {
 #[test]
 fn explicit_num_frames() {
     let num_frames = |num_frames: u16, tags: &str| {
-        let swf = swfasm::compile_str(
+        let swf = compile_str(
             &format!("Swf(version: 10, num_frames: {num_frames}, tags: [{tags}])"),
             &NoFiles,
         )
@@ -678,8 +683,7 @@ fn define_sprite() {
 #[test]
 fn define_sprite_num_frames() {
     let num_frames = |tags: &str| {
-        let swf =
-            swfasm::compile_str(&format!("Swf(version: 10, tags: [{tags}])"), &NoFiles).unwrap();
+        let swf = compile_str(&format!("Swf(version: 10, tags: [{tags}])"), &NoFiles).unwrap();
         swf::decompress_swf(&swf[..]).unwrap().header.num_frames()
     };
     // Frames of sprites do not count towards the main timeline.
@@ -2277,7 +2281,8 @@ fn define_font_name() {
 #[test]
 fn rascal_syntax() {
     let parse = |data: &str| -> Result<Data, String> {
-        let swf = swfasm::parse(&format!("Swf(version: 10, tags: [DoAction({data})])"))
+        let swf = Compiler::new()
+            .parse(&format!("Swf(version: 10, tags: [DoAction({data})])"))
             .map_err(|e| format!("{e:#}"))?;
         match swf.tags.into_iter().next() {
             Some(Tag::DoAction(data)) => Ok(data),
@@ -2461,7 +2466,7 @@ mod rascal {
         // Functions are defined with DefineFunction2 (0x8E) from SWF 7, and with
         // DefineFunction (0x9B) before.
         let compile = |version, options| {
-            swfasm::compile_str(
+            compile_str(
                 &format!(
                     r#"Swf(version: {version}, tags: [
                         DoAction(Rascal(source: "function f(a) {{ trace(a); }}"{options})),
@@ -2521,7 +2526,7 @@ mod rascal {
 
         // Before SWF 7, there are no registers to promote to.
         let compile = |options| {
-            swfasm::compile_str(
+            compile_str(
                 &format!(
                     r#"Swf(version: 6, tags: [
                         DoAction(Rascal(source: "function f() {{ var x = 1; trace(x); }}"{options})),
@@ -2632,7 +2637,7 @@ fn rascal_not_available() {
     for data in [r#"Rascal("")"#, r#"Rascal(file: "a.as")"#] {
         let source = format!("Swf(version: 10, tags: [DoAction({data})])");
         // Sources that use Rascal are parsed, but fail to compile.
-        swfasm::parse(&source).unwrap();
+        Compiler::new().parse(&source).unwrap();
         assert_err!(compile_err!(source), "Rascal is not available");
     }
 }

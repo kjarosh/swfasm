@@ -3,7 +3,7 @@
 //! These types are designed to be written by hand, so most fields have defaults
 //! and values use convenient units (e.g. pixels instead of twips).
 //!
-//! They are lowered into `swf` crate types by [`crate::compile`].
+//! They are lowered into `swf` crate types by [`Compiler`](crate::Compiler).
 
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer};
