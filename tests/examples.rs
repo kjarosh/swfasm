@@ -3,6 +3,7 @@
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
 use swfasm::Compiler;
+use swfasm::asc::{AscConfig, AscFile};
 use swfasm::files::Directory;
 use walkdir::WalkDir;
 
@@ -40,8 +41,14 @@ fn run_test(source_path: &Path) -> Result<(), Failed> {
 
     let source = std::fs::read_to_string(source_path)?;
     let files = Directory::new(source_path.parent().unwrap());
+    let asc_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("vendor/asc");
+    let asc = AscConfig {
+        jar: AscFile::Path(asc_dir.join("asc.jar")),
+        playerglobal: AscFile::Path(asc_dir.join("playerglobal.abc")),
+    };
     let actual = Compiler::new()
         .with_files(&files)
+        .with_asc(asc)
         .compile_str(&source)
         .map_err(|e| format!("{e:#}"))?;
     let expected = std::fs::read(&expected_path).map_err(|e| {

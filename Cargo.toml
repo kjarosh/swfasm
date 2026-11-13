@@ -51,5 +51,5 @@ walkdir = "2.5.0"
 name = "examples"
 harness = false
 # The examples are compiled like swfasm-cli does, with files read by `Directory`
-# and Rascal available.
-required-features = ["fs", "rascal"]
+# and Rascal and asc available.
+required-features = ["asc", "fs", "rascal"]
