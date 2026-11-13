@@ -2707,6 +2707,7 @@ fn asc_syntax() {
     );
 }
 
+#[cfg(not(feature = "asc"))]
 #[test]
 fn asc_not_available() {
     for data in [r#"Asc("")"#, r#"Asc(file: "a.as")"#] {
