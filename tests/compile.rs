@@ -3,7 +3,7 @@ use swf::{
     PlaceObjectAction, Rectangle, SwfStr, Twips,
 };
 use swfasm::files::{FileProvider, NoFiles};
-use swfasm::source::{ClipEvent, Data, Rascal, RascalSource, Tag};
+use swfasm::source::{ClipEvent, Data, Rascal, ScriptSource, Tag};
 
 // These are macros instead of functions, so that failures point to the test.
 
@@ -2286,13 +2286,13 @@ fn rascal_syntax() {
     };
     let rascal = |script| Ok(Data::Rascal(script));
     let inline = |text: &str| Rascal {
-        source: RascalSource::Inline(text.to_owned()),
+        source: ScriptSource::Inline(text.to_owned()),
         swf_version: None,
         fold_constants: true,
         promote_variables_to_registers: true,
     };
     let file = |path: &str| Rascal {
-        source: RascalSource::File(path.to_owned()),
+        source: ScriptSource::File(path.to_owned()),
         swf_version: None,
         fold_constants: true,
         promote_variables_to_registers: true,

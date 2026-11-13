@@ -5,7 +5,7 @@
 #![cfg(feature = "rascal")]
 
 use crate::files::FileProvider;
-use crate::source::{Rascal, RascalSource};
+use crate::source::{Rascal, ScriptSource};
 use ::rascal::{CompileOptions, OptimizationOptions, ProgramBuilder, SourceProvider, SwfOptions};
 use anyhow::{Result, anyhow, bail};
 use std::io;
@@ -24,8 +24,8 @@ pub(crate) fn compile(
     files: &dyn FileProvider,
 ) -> Result<Vec<u8>> {
     let (path, inline) = match &script.source {
-        RascalSource::Inline(source) => (INLINE_PATH, Some(source.as_str())),
-        RascalSource::File(path) => (path.as_str(), None),
+        ScriptSource::Inline(source) => (INLINE_PATH, Some(source.as_str())),
+        ScriptSource::File(path) => (path.as_str(), None),
     };
     let swf_version = script.swf_version.unwrap_or(swf_version);
     let optimizations = OptimizationOptions::full()
