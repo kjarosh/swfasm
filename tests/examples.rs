@@ -2,6 +2,7 @@
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
+use swfasm::Compiler;
 use swfasm::files::Directory;
 use walkdir::WalkDir;
 
@@ -39,7 +40,10 @@ fn run_test(source_path: &Path) -> Result<(), Failed> {
 
     let source = std::fs::read_to_string(source_path)?;
     let files = Directory::new(source_path.parent().unwrap());
-    let actual = swfasm::compile_str(&source, &files).map_err(|e| format!("{e:#}"))?;
+    let actual = Compiler::new()
+        .with_files(&files)
+        .compile_str(&source)
+        .map_err(|e| format!("{e:#}"))?;
     let expected = std::fs::read(&expected_path).map_err(|e| {
         format!(
             "failed to read {}: {e}, {}",

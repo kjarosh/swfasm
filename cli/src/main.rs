@@ -3,6 +3,7 @@ mod cli;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::Opt;
+use swfasm::Compiler;
 use swfasm::files::{Directory, FileProvider, NoFiles};
 
 fn main() -> Result<()> {
@@ -33,7 +34,9 @@ fn main() -> Result<()> {
         }
         None => &NoFiles,
     };
-    let swf = swfasm::compile_str(&text, files)
+    let swf = Compiler::new()
+        .with_files(files)
+        .compile_str(&text)
         .with_context(|| format!("Failed to compile {}", opt.input.display()))?;
 
     std::fs::write(&output_path, swf)

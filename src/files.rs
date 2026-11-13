@@ -27,9 +27,8 @@ use std::path::{Component, Path, PathBuf};
 /// }
 ///
 /// let files = Memory(HashMap::from([("data.bin".to_string(), vec![1, 2, 3])]));
-/// let swf = swfasm::compile_str(
+/// let swf = swfasm::Compiler::new().with_files(&files).compile_str(
 ///     r#"Swf(version: 10, tags: [DefineBinaryData(id: 1, data: File("data.bin"))])"#,
-///     &files,
 /// )?;
 /// assert!(swf.ends_with(&[1, 2, 3]));
 /// # Ok::<(), anyhow::Error>(())

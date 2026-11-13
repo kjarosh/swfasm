@@ -3,8 +3,7 @@
 //! The values are checked here, so that errors point to the invalid field.
 
 use super::matrix::convert_matrix;
-use super::{check_sbits, fixed8, null_terminated_str, read_data};
-use crate::files::FileProvider;
+use super::{Compiler, check_sbits, fixed8, null_terminated_str, read_data};
 use crate::source::{ClipAction, ClipEvent, ColorTransform, Tag};
 use anyhow::{Context, Result, bail};
 use std::borrow::Cow;
@@ -22,7 +21,7 @@ pub(super) struct PlaceObjectData<'a> {
 pub(super) fn convert<'a>(
     tag: &'a Tag,
     swf_version: u8,
-    files: &dyn FileProvider,
+    compiler: &Compiler,
     data: &'a mut PlaceObjectData<'a>,
 ) -> Result<PlaceObject<'a>> {
     if let Tag::PlaceObject2 {
@@ -34,7 +33,7 @@ pub(super) fn convert<'a>(
             .iter()
             .enumerate()
             .map(|(i, clip_action)| {
-                read_data(&clip_action.actions, swf_version, files)
+                read_data(&clip_action.actions, swf_version, compiler)
                     .with_context(|| format!("clip_actions: clip action #{i}"))
             })
             .collect::<Result<_>>()?;
