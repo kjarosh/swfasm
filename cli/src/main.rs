@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::Opt;
 use swfasm::Compiler;
+use swfasm::asc::{AscConfig, AscFile};
 use swfasm::files::{Directory, FileProvider, NoFiles};
 
 fn main() -> Result<()> {
@@ -34,8 +35,16 @@ fn main() -> Result<()> {
         }
         None => &NoFiles,
     };
+    let mut asc = AscConfig::vendored();
+    if let Some(path) = opt.asc_jar {
+        asc.jar = AscFile::Path(path);
+    }
+    if let Some(path) = opt.playerglobal {
+        asc.playerglobal = AscFile::Path(path);
+    }
     let swf = Compiler::new()
         .with_files(files)
+        .with_asc(asc)
         .compile_str(&text)
         .with_context(|| format!("Failed to compile {}", opt.input.display()))?;
 
