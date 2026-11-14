@@ -61,13 +61,29 @@ Raw(code: 1, data: InlineBytes([
 
 Paths of files are relative to the directory of the `.swfasm` file.
 
+Data can also be compiled from ActionScript:
+
+```ron
+// AVM1 bytecode, compiled by Rascal from ActionScript 2.
+DoAction(Rascal(r#"trace("hello");"#)),
+// An ABC file, compiled by asc from ActionScript 3. It runs Java, which has to
+// be installed.
+DoAbc(Asc(file: "Main.as", scripts: ["pkg/Other.as"])),
+```
+
+See [`examples/rascal.swfasm`](examples/rascal.swfasm) and
+[`examples/asc.swfasm`](examples/asc.swfasm) for their options. They are behind
+the `rascal` and `asc` features of the library, enabled by default. asc and the
+playerglobal that scripts are compiled against are given to the compiler, the
+`asc-vendored` feature includes copies of them (see [`vendor/asc`](vendor/asc)),
+which the command line tool uses unless `--asc-jar` or `--playerglobal` is
+given.
+
 ## TODO
 
 * Symbolic character IDs (e.g. `@name`) instead of numbers.
 * Remaining tags (a lot of them).
 * Loading other data from files (e.g. images and sounds).
-* Compiling ActionScript into tags: Rascal for AVM1 (`DoAction`,
-  `DoInitAction`), asc for AVM2 (`DoAbc`).
 * Better error messages.
 
 ## License
