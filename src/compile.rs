@@ -1,6 +1,7 @@
 //! Compiles the textual (RON) representation of a SWF file into a SWF file.
 
 mod button;
+mod font;
 mod matrix;
 mod place_object;
 mod shape;
@@ -328,6 +329,9 @@ fn write_tag(tag: &Tag, swf_version: u8, compiler: &Compiler, output: &mut Vec<u
         }
         Tag::SetBackgroundColor(color) => {
             swf::Tag::SetBackgroundColor(rgb(color).context("background color")?)
+        }
+        Tag::DefineFont { id, glyphs } => {
+            swf::Tag::DefineFont(font::convert_define_font(*id, glyphs, swf_version)?)
         }
         Tag::RemoveObject { character, depth } => swf::Tag::RemoveObject(RemoveObject {
             depth: *depth,

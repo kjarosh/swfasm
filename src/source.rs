@@ -143,6 +143,36 @@ pub enum Tag {
     /// The color is stored as `RGB`.
     SetBackgroundColor(Color),
 
+    /// Defines a font with the shapes of its glyphs (code 10).
+    ///
+    /// ```ron
+    /// DefineFont(id: 1, glyphs: [
+    ///     (records: [
+    ///         StyleChange(move_to: (x: 0, y: -10), fill_style_1: 1),
+    ///         StraightEdge(dx: 10),
+    ///         StraightEdge(dy: 10),
+    ///         StraightEdge(dx: -10),
+    ///         StraightEdge(dy: -10),
+    ///     ]),
+    ///     (),
+    /// ]),
+    /// ```
+    DefineFont {
+        /// The character ID.
+        id: u16,
+
+        /// The shapes of the glyphs (`GlyphShapeTable`).
+        ///
+        /// Each glyph is written with 1 bit of fill style indices and no bits
+        /// of line style indices, so fill style indices must be at most 1, and
+        /// line style indices must be 0. Larger ones are an error.
+        ///
+        /// The `OffsetTable` is written from the glyphs. Offsets count bytes
+        /// from the start of the table and are stored in 16 bits, so glyphs
+        /// that start more than 65535 bytes into it are an error.
+        glyphs: Vec<Shape>,
+    },
+
     /// AVM1 actions run in the current frame (code 12).
     ///
     /// The data is AVM1 bytecode.
@@ -588,6 +618,17 @@ pub struct DefineShape {
     /// Defaults to a shape without styles and records.
     #[serde(default)]
     pub shape: ShapeWithStyle,
+}
+
+/// A shape without styles (`SHAPE`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Shape {
+    /// The shape records.
+    ///
+    /// They are followed by the end record, which is appended automatically.
+    #[serde(default)]
+    pub records: Vec<ShapeRecord>,
 }
 
 /// A shape with its fill and line styles (`SHAPEWITHSTYLE`).

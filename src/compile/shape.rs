@@ -167,7 +167,7 @@ fn convert_line_style(line_style: &LineStyle) -> Result<swf::LineStyle> {
         .with_color(rgb(&line_style.color).context("color")?))
 }
 
-fn convert_shape_record(
+pub(super) fn convert_shape_record(
     record: &ShapeRecord,
     num_fill_bits: u32,
     num_line_bits: u32,

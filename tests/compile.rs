@@ -413,6 +413,8 @@ const STRUCTS: &[&str] = &[
         records: [(states: [], character: 1, depth: 1{})],
         actions: InlineBytes(""),
     )"#,
+    "DefineFont(id: 1, glyphs: []{})",
+    "DefineFont(id: 1, glyphs: [(records: []{})])",
     r#"DefineBitsJpeg2(id: 1, data: InlineBytes(""){})"#,
     r#"Protect(password: "a"{})"#,
     "PlaceObject2(depth: 1{})",
@@ -2025,6 +2027,92 @@ fn define_button_errors() {
             &Failing
         ),
         r#"tag #0: actions: failed to read file "x": no file named x"#
+    );
+}
+
+#[test]
+fn define_font() {
+    assert_eq!(
+        compile_tags!(
+            "DefineFont(id: 0x1234, glyphs: [
+                (records: [
+                    StyleChange(move_to: (x: 1, y: -1), fill_style_0: 1),
+                    StraightEdge(dx: 1),
+                    StraightEdge(dy: 1),
+                    StraightEdge(dx: -1, dy: -1),
+                    CurvedEdge(control_dx: 1, anchor_dy: 1),
+                ]),
+                (),
+                (records: [StyleChange(fill_style_1: 1, line_style: 0)]),
+            ])"
+        ),
+        [
+            0x9C, 0x02, // header: code 10, length 28
+            0x34, 0x12, // ID
+            0x06, 0x00, 0x15, 0x00, 0x17, 0x00, // offsets: 6, 21, 23
+            0x10, // 1 bit of fill style indices, no bits of line style indices
+            // Style change: move to 20, -20 twips in 6 bits, fill style 0 (24
+            // bits), horizontal edge: 20 twips in 6 bits (14 bits), vertical
+            // edge: 20 twips in 6 bits (14 bits), general edge: -20, -20 twips
+            // in 6 bits (19 bits), curved edge: 20, 0, 0, 20 twips in 6 bits
+            // (30 bits), and the end (6 bits).
+            0x0C, 0xCA, 0x59, 0xD0, 0x53, 0x45, 0x4D, 0x36, 0x59, 0x22, 0x80, 0x00, 0xA0, 0x00,
+            0x10, 0x00, // an empty glyph: bits of style indices, the end
+            0x10, // bits of style indices
+            // Style change: fill style 1 (7 bits), line style in no bits, and
+            // the end (6 bits).
+            0x32, 0x00,
+        ]
+    );
+    // A font without glyphs has no offset table.
+    assert_eq!(
+        compile_tags!("DefineFont(id: 1, glyphs: [])"),
+        [0x82, 0x02, 0x01, 0x00]
+    );
+}
+
+#[test]
+fn define_font_max_offset() {
+    // Each empty glyph takes 2 bytes, and 2 bytes in the offset table, so the
+    // last of 16384 glyphs starts at 65534.
+    let font = |count: usize| format!("DefineFont(id: 1, glyphs: [{}])", "(),".repeat(count));
+    let mut expected = vec![0xBF, 0x02, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]; // header, ID
+    expected.extend((0..16384u16).flat_map(|i| (0x8000 + i * 2).to_le_bytes()));
+    expected.extend([0x10, 0x00].repeat(16384));
+    assert_eq!(compile_tags!(font(16384)), expected);
+    // With one more glyph, the offset table grows too, so the error is about
+    // the first glyph that doesn't fit, not the last one.
+    assert_err!(
+        tag_err!(font(16385)),
+        "tag #1: glyphs: glyph #16383 starts at offset 65536, which does not fit in 16 bits"
+    );
+}
+
+#[test]
+fn define_font_errors() {
+    let glyph_err = |records: &str| {
+        tag_err!(format!(
+            "DefineFont(id: 1, glyphs: [(), (records: [{records}])])"
+        ))
+    };
+    assert_err!(
+        glyph_err("StraightEdge(), StyleChange(fill_style_0: 2)"),
+        "tag #1: glyphs: glyph #1: records: record #1: fill_style_0: 2 does not fit in the \
+         1 bits of fill style indices"
+    );
+    assert_err!(
+        glyph_err("StyleChange(fill_style_1: 2)"),
+        "tag #1: glyphs: glyph #1: records: record #0: fill_style_1: 2 does not fit in the \
+         1 bits of fill style indices"
+    );
+    assert_err!(
+        glyph_err("StyleChange(line_style: 1)"),
+        "tag #1: glyphs: glyph #1: records: record #0: line_style: 1 does not fit in the \
+         0 bits of line style indices"
+    );
+    assert_err!(
+        glyph_err("StraightEdge(dx: 3276.8)"),
+        "tag #1: glyphs: glyph #1: records: record #0: dx: 3276.8px is out of range"
     );
 }
 
