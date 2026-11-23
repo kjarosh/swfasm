@@ -674,8 +674,65 @@ fn invalid_values() {
         "frame rate: 0.001 is not representable as an 8.8 fixed point number"
     );
     assert_err!(
-        tag_err!("SetBackgroundColor(0x1000000)"),
-        "background color 0x1000000 is not in the 0xRRGGBB format"
+        tag_err!("SetBackgroundColor(Rgba(0, 0, 0, 0))"),
+        "background color: the color has alpha, but is stored as RGB"
+    );
+}
+
+#[test]
+fn set_background_color() {
+    assert_eq!(
+        compile_tags!("SetBackgroundColor(Rgb(0x33, 0x66, 0x99))"),
+        [
+            0x43, 0x02, // header: code 9, length 3
+            0x33, 0x66, 0x99, // red, green and blue
+        ]
+    );
+    // The hex string is the same color.
+    assert_eq!(
+        compile_tags!(r##"SetBackgroundColor("#336699")"##),
+        compile_tags!("SetBackgroundColor(Rgb(0x33, 0x66, 0x99))")
+    );
+    assert_eq!(
+        compile_tags!(r##"SetBackgroundColor(r"#aBcDeF")"##),
+        compile_tags!("SetBackgroundColor(Rgb(0xAB, 0xCD, 0xEF))")
+    );
+}
+
+#[test]
+fn color_errors() {
+    // The messages are compared whole, as they are a part of the interface.
+    let err = |color: &str| {
+        compile_err!(format!(
+            "Swf(version: 10, tags: [SetBackgroundColor({color})])"
+        ))
+    };
+    let expected = "expected a color: Rgb(r, g, b), Rgba(r, g, b, a), \"#RRGGBB\" or \"#RRGGBBAA\"";
+    assert_eq!(err("0x336699"), format!("1:52: {expected}"));
+    assert_eq!(err("(1, 2, 3)"), format!("1:53: {expected}"));
+    assert_eq!(
+        err("Rgba(1, 2, 3)"),
+        "1:57: Expected tuple variant Color::Rgba with 4 elements but found 3 elements instead"
+    );
+    assert_eq!(err("Rgb(1, 2, 256)"), "1:58: Integer is out of bounds");
+    assert_eq!(
+        err("Hsv(1, 2, 3)"),
+        "1:56: Unexpected variant named `Hsv` in enum `Color`, expected either `Rgb` or `Rgba` \
+         instead"
+    );
+    for hex in ["336699", "#33669", "#3366990", "#33669g", "#336699 "] {
+        assert_eq!(
+            err(&format!("{hex:?}")),
+            format!(
+                "1:{}: invalid color {hex:?}, expected \"#RRGGBB\" or \"#RRGGBBAA\"",
+                46 + hex.len()
+            )
+        );
+    }
+    // A hex string with alpha has alpha too.
+    assert_err!(
+        tag_err!(r##"SetBackgroundColor("#33669980")"##),
+        "tag #1: background color: the color has alpha, but is stored as RGB"
     );
 }
 
@@ -741,10 +798,10 @@ fn define_sprite_errors() {
         compile_err!(
             "Swf(version: 10, tags: [
                 ShowFrame,
-                DefineSprite(id: 1, tags: [ShowFrame, SetBackgroundColor(0x1000000)]),
+                DefineSprite(id: 1, tags: [ShowFrame, SetBackgroundColor(Rgba(0, 0, 0, 0))]),
             ])"
         ),
-        "tag #1: tag #1: background color 0x1000000 is not in the 0xRRGGBB format"
+        "tag #1: tag #1: background color: the color has alpha, but is stored as RGB"
     );
 }
 
