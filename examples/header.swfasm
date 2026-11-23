@@ -6,7 +6,7 @@ Swf(
     num_frames: 2,                      // default: the number of ShowFrame tags
     tags: [
         FileAttributes(),
-        SetBackgroundColor(0x336699),   // 0xRRGGBB
+        SetBackgroundColor("#336699"),  // or Rgb(0x33, 0x66, 0x99)
         ShowFrame,
         End,                            // the tag list is not terminated automatically
     ],

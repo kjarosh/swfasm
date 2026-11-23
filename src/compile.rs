@@ -6,14 +6,14 @@ mod place_object;
 mod video;
 
 use crate::files::{FileProvider, NoFiles};
-use crate::source::{Data, GridFit, NamedFrame, Rect, Swf, Tag};
+use crate::source::{Color, Data, GridFit, NamedFrame, Rect, Swf, Tag};
 use anyhow::{Context, Result, anyhow, bail};
 use place_object::PlaceObjectData;
 use ron::extensions::Extensions;
 use std::borrow::Cow;
 use std::fmt::Display;
 use swf::{
-    Color, CsmTextSettings, DefineBinaryData, DefineSceneAndFrameLabelData, DoAbc2, DoAbc2Flag,
+    CsmTextSettings, DefineBinaryData, DefineSceneAndFrameLabelData, DoAbc2, DoAbc2Flag,
     ExportedAsset, FileAttributes, Fixed8, Fixed16, FrameLabel, FrameLabelData, Header,
     NameCharacter, ProductInfo, Rectangle, RemoveObject, SwfStr, SymbolClassLink, TagCode,
     TextGridFit, Twips,
@@ -39,9 +39,9 @@ use swf::{
 /// // Values that parse but can't be encoded result in errors.
 /// let err = compiler.compile_str("Swf(
 ///     version: 10,
-///     tags: [SetBackgroundColor(0x1000000)],
+///     tags: [SetBackgroundColor(Rgba(0, 0, 0, 0))],
 /// )").unwrap_err();
-/// assert!(format!("{err:#}").contains("not in the 0xRRGGBB format"));
+/// assert!(format!("{err:#}").contains("the color has alpha, but is stored as RGB"));
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 #[derive(Clone)]
@@ -193,6 +193,19 @@ fn null_terminated_bytes(bytes: &[u8]) -> Result<&SwfStr> {
     Ok(SwfStr::from_bytes(bytes))
 }
 
+/// Converts a color stored as `RGB`, failing if it has alpha.
+fn rgb(color: &Color) -> Result<swf::Color> {
+    if color.a.is_some() {
+        bail!("the color has alpha, but is stored as RGB");
+    }
+    Ok(swf::Color {
+        r: color.r,
+        g: color.g,
+        b: color.b,
+        a: 255,
+    })
+}
+
 /// Fails if `raw`, the encoding of `value`, does not fit in `num_bits` signed
 /// bits.
 fn check_sbits(raw: i32, num_bits: u32, value: impl Display) -> Result<()> {
@@ -301,11 +314,8 @@ fn write_tag(tag: &Tag, swf_version: u8, compiler: &Compiler, output: &mut Vec<u
             data = read_data(tables, swf_version, compiler)?;
             swf::Tag::JpegTables(&data)
         }
-        Tag::SetBackgroundColor(rgb) => {
-            if *rgb > 0xFFFFFF {
-                bail!("background color {rgb:#x} is not in the 0xRRGGBB format");
-            }
-            swf::Tag::SetBackgroundColor(Color::from_rgb(*rgb, 255))
+        Tag::SetBackgroundColor(color) => {
+            swf::Tag::SetBackgroundColor(rgb(color).context("background color")?)
         }
         Tag::RemoveObject { character, depth } => swf::Tag::RemoveObject(RemoveObject {
             depth: *depth,

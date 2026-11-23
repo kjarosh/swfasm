@@ -137,9 +137,8 @@ pub enum Tag {
 
     /// Sets the background color of the stage (code 9).
     ///
-    /// The color is in the `0xRRGGBB` format, so it must be at most
-    /// `0xFFFFFF`. Larger values are an error.
-    SetBackgroundColor(u32),
+    /// The color is stored as `RGB`.
+    SetBackgroundColor(Color),
 
     /// AVM1 actions run in the current frame (code 12).
     ///
@@ -610,6 +609,88 @@ impl Default for Matrix {
             translate_x: 0.0,
             translate_y: 0.0,
         }
+    }
+}
+
+/// A color, with or without alpha.
+///
+/// Fields store colors as `RGB` (red, green and blue bytes) or `RGBA` (red,
+/// green, blue and alpha bytes). A color with alpha in an `RGB` field is an
+/// error, and so is a color without alpha in an `RGBA` field.
+///
+/// ```ron
+/// // Without alpha.
+/// Rgb(0x33, 0x66, 0x99),
+/// "#336699",
+///
+/// // With alpha.
+/// Rgba(0x33, 0x66, 0x99, 0x80),
+/// "#33669980",
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: Option<u8>,
+}
+
+impl Color {
+    /// Parses a hex string, `"#RRGGBB"` or `"#RRGGBBAA"`.
+    fn parse_hex(hex: &str) -> Result<Color, String> {
+        let invalid = || format!("invalid color \"{hex}\", expected \"#RRGGBB\" or \"#RRGGBBAA\"");
+        let digits = hex.strip_prefix('#').ok_or_else(invalid)?;
+        if !matches!(digits.len(), 6 | 8) || !digits.bytes().all(|c| c.is_ascii_hexdigit()) {
+            return Err(invalid());
+        }
+        let byte = |i: usize| u8::from_str_radix(&digits[i..i + 2], 16).unwrap();
+        Ok(Color {
+            r: byte(0),
+            g: byte(2),
+            b: byte(4),
+            a: (digits.len() == 8).then(|| byte(6)),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// A color written as an enum variant, named like the outer type for
+        /// the errors.
+        #[derive(Deserialize)]
+        enum Color {
+            Rgb(u8, u8, u8),
+            Rgba(u8, u8, u8, u8),
+        }
+
+        // RON doesn't pass variant names to `deserialize_any`, and enums can't
+        // be strings, so the value is parsed again as either of them.
+        let raw = Box::<ron::value::RawValue>::deserialize(deserializer)?;
+        if let Ok(hex) = raw.into_rust::<String>() {
+            return Self::parse_hex(&hex).map_err(de::Error::custom);
+        }
+        if !raw
+            .trim()
+            .get_ron()
+            .starts_with(|c: char| c.is_ascii_alphabetic())
+        {
+            return Err(de::Error::custom(
+                "expected a color: Rgb(r, g, b), Rgba(r, g, b, a), \"#RRGGBB\" or \"#RRGGBBAA\"",
+            ));
+        }
+        // The position is in the value, so only the error itself is kept.
+        let color = raw
+            .into_rust::<Color>()
+            .map_err(|err| de::Error::custom(err.code))?;
+        Ok(match color {
+            Color::Rgb(r, g, b) => Self { r, g, b, a: None },
+            Color::Rgba(r, g, b, a) => Self {
+                r,
+                g,
+                b,
+                a: Some(a),
+            },
+        })
     }
 }
 
