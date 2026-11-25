@@ -2315,6 +2315,38 @@ fn define_scaling_grid_errors() {
 }
 
 #[test]
+fn rect() {
+    // Rectangles are tested in DefineScalingGrid, the smallest tag with one.
+    // The edges are not required to be in order.
+    assert_eq!(
+        compile_tags!(
+            "DefineScalingGrid(character: 1, splitter: (x: 1, y: 0.05, width: -2, height: -0.1))"
+        ),
+        [
+            0x86, 0x13, // header: code 78, length 6
+            0x01, 0x00, // character
+            0x32, 0x96, 0x03, 0xF8, // 20, -20, 1, -1 twips in 6 bits
+        ]
+    );
+    // The extremes of the range, which use all 31 bits.
+    assert_eq!(
+        compile_tags!(
+            "DefineScalingGrid(
+                character: 1,
+                splitter: (x: -53687091.2, width: 107374182.35, height: 0),
+            )"
+        ),
+        [
+            0x93, 0x13, // header: code 78, length 19
+            0x01, 0x00, // character
+            // -2^30, 2^30 - 1, 0, 0 twips in 31 bits.
+            0xFC, 0x00, 0x00, 0x00, 0x07, 0xFF, 0xFF, 0xFF, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00,
+        ]
+    );
+}
+
+#[test]
 fn do_abc_2() {
     // The body is the flags, the null-terminated name and the ABC data.
     assert_eq!(
