@@ -621,11 +621,11 @@ fn data_errors() {
     assert_err!(err("File(1)"), "Expected string");
     assert_err!(
         err(r#"InlineBytes("070")"#),
-        r#"hex string "070" has an odd number of digits"#
+        r#"incomplete hex byte in "070""#
     );
     assert_err!(
         err(r#"InlineBytes(["00", "0"])"#),
-        r#"hex string "0" has an odd number of digits"#
+        r#"incomplete hex byte in "0""#
     );
     assert_err!(err(r#"InlineBytes("0g")"#), "invalid hex digit 'g'");
     assert_err!(err("InlineBytes([1, 2])"), "Expected string");

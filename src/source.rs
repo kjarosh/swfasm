@@ -1369,35 +1369,64 @@ pub enum Data {
 /// Binary data, written as a hex string with optional whitespace (`"01 02 ff"`),
 /// or a list of such strings, which are concatenated.
 ///
+/// Strings can also contains 'verbatim' sections, enclosed in single quotes
+/// (`"ff 'Hello world!' ff"`). Such sections will *always* be interpreted as UTF8,
+/// even in SWF 5 or lower.
+///
 /// The list form allows commenting individual parts of the data:
 ///
 /// ```ron
 /// data: InlineBytes([
-///     "0a 00", // frame count
-///     "ff ff", // flags
+///     "0a 00",    // frame count
+///     "ff ff",    // flags
+///     "'foo\0'",  // a NUL-terminated string
 /// ]),
 /// ```
 #[derive(Debug, Default, PartialEq)]
 pub struct Bytes(pub Vec<u8>);
 
 impl Bytes {
-    fn parse_hex(hex: &str) -> Result<Vec<u8>, String> {
-        let digits = hex
-            .chars()
-            .filter(|c| !c.is_ascii_whitespace())
-            .map(|c| {
-                c.to_digit(16)
-                    .map(|d| d as u8)
-                    .ok_or_else(|| format!("invalid hex digit '{c}'"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if !digits.len().is_multiple_of(2) {
-            return Err(format!("hex string \"{hex}\" has an odd number of digits"));
+    fn parse_raw(raw: &str) -> Result<Vec<u8>, String> {
+        #[derive(Debug)]
+        enum State {
+            Default,
+            InHexByte { nibble: u8 },
+            InVerbatim,
         }
-        Ok(digits
-            .chunks(2)
-            .map(|pair| pair[0] << 4 | pair[1])
-            .collect())
+
+        let mut bytes = Vec::new();
+        let mut state = State::Default;
+        for c in raw.chars() {
+            state = match state {
+                // Skip whitespace
+                State::Default | State::InHexByte { .. } if c.is_whitespace() => continue,
+
+                // Hex bytes
+                State::Default if let Some(d) = c.to_digit(16) => {
+                    State::InHexByte { nibble: d as u8 }
+                }
+                State::InHexByte { nibble } if let Some(d) = c.to_digit(16) => {
+                    bytes.push(nibble << 4 | (d as u8));
+                    State::Default
+                }
+
+                // Verbatim sections (can't start in the middle of a byte)
+                State::Default if c == '\'' => State::InVerbatim,
+                State::InVerbatim if c == '\'' => State::Default,
+                State::InVerbatim => {
+                    bytes.extend(c.encode_utf8(&mut [0; 4]).as_bytes());
+                    State::InVerbatim
+                }
+
+                _ => return Err(format!("invalid hex digit '{c}'")),
+            };
+        }
+
+        match state {
+            State::Default => Ok(bytes),
+            State::InHexByte { .. } => Err(format!("incomplete hex byte in {raw:?}")),
+            State::InVerbatim => Err(format!("unterminated verbatim section in {raw:?}")),
+        }
     }
 }
 
@@ -1412,8 +1441,8 @@ impl<'de> Deserialize<'de> for Bytes {
                 f.write_str("a hex string or a list of hex strings")
             }
 
-            fn visit_str<E: de::Error>(self, hex: &str) -> Result<Bytes, E> {
-                Bytes::parse_hex(hex).map(Bytes).map_err(E::custom)
+            fn visit_str<E: de::Error>(self, raw: &str) -> Result<Bytes, E> {
+                Bytes::parse_raw(raw).map(Bytes).map_err(E::custom)
             }
 
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Bytes, A::Error> {
@@ -1424,11 +1453,11 @@ impl<'de> Deserialize<'de> for Bytes {
                 /// `#[serde(borrow)]`.
                 #[derive(Deserialize)]
                 #[serde(transparent)]
-                struct Hex<'a>(#[serde(borrow)] Cow<'a, str>);
+                struct Raw<'a>(#[serde(borrow)] Cow<'a, str>);
 
                 let mut bytes = Vec::new();
-                while let Some(Hex(hex)) = seq.next_element()? {
-                    bytes.extend(Bytes::parse_hex(&hex).map_err(de::Error::custom)?);
+                while let Some(Raw(raw)) = seq.next_element()? {
+                    bytes.extend(Bytes::parse_raw(&raw).map_err(de::Error::custom)?);
                 }
                 Ok(Bytes(bytes))
             }
@@ -1658,8 +1687,11 @@ mod tests {
             parse_bytes("\" 0 1\t02\n\r f f \""),
             Ok(vec![0x01, 0x02, 0xff])
         );
+        assert_eq!(
+            parse_bytes(r#""ff 'Hello world!\0' ff""#),
+            Ok(b"\xffHello world!\x00\xff".to_vec())
+        );
     }
-
     #[test]
     fn deserialize_bytes_from_list() {
         assert_eq!(parse_bytes("[]"), Ok(vec![]));
@@ -1681,11 +1713,12 @@ mod tests {
     #[test]
     fn deserialize_bytes_errors() {
         let parse_err = |text| parse_bytes(text).unwrap_err();
-        assert!(parse_err(r#""0""#).contains("odd number of digits"));
-        assert!(parse_err(r#""01 2""#).contains("odd number of digits"));
-        assert!(parse_err(r#"["0", "1"]"#).contains("odd number of digits"));
+        assert!(parse_err(r#""0""#).contains("incomplete hex byte"));
+        assert!(parse_err(r#""01 2""#).contains("incomplete hex byte"));
+        assert!(parse_err(r#"["0", "1"]"#).contains("incomplete hex byte"));
         assert!(parse_err(r#""0g""#).contains("invalid hex digit 'g'"));
         assert!(parse_err(r#""0x01""#).contains("invalid hex digit 'x'"));
+        assert!(parse_err(r#""01 'foo""#).contains("unterminated verbatim section"));
         assert!(parse_err(r#"["01", "zz"]"#).contains("invalid hex digit 'z'"));
         assert!(parse_err("1").contains("a hex string or a list of hex strings"));
         assert!(parse_bytes("[1]").is_err());
